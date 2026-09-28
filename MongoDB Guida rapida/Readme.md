@@ -250,7 +250,7 @@ Testare periodicamente: insert di prova → backup → drop → restore → veri
 Nessuna modifica lato VM, traffico cifrato. Dal PC:
 
 ```bash
-ssh -N -L 27017:127.0.0.1:27017 azureuserdgs@<IP_PUBBLICO_VM>
+ssh -N -L 27017:127.0.0.1:27017 azureuser@<IP_PUBBLICO_VM>
 ```
 
 Oppure in `~/.ssh/config`, poi `ssh -N mongo-azure`:
@@ -258,7 +258,7 @@ Oppure in `~/.ssh/config`, poi `ssh -N mongo-azure`:
 ```
 Host mongo-azure
     HostName <IP_PUBBLICO_VM>
-    User azureuserdgs
+    User azureuser
     IdentityFile ~/.ssh/chiave.pem
     LocalForward 27017 127.0.0.1:27017
     ServerAliveInterval 60

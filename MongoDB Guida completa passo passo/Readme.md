@@ -52,10 +52,10 @@ Capire queste poche parole ti eviterà la maggior parte degli errori.
 **Prompt.** La scritta che compare prima del cursore, per esempio:
 
 ```
-azureuserdgs@azmdb01:~/mongodb$
+azureuser@azmdb01:~/mongodb$
 ```
 
-Ti dice **chi sei** (`azureuserdgs`), **dove sei** (`azmdb01`, cioè la VM) e **in quale cartella** (`~/mongodb`, dove `~` significa "la tua cartella personale"). Guardalo sempre: è il modo più semplice per capire se stai lavorando sulla VM o sul tuo PC.
+Ti dice **chi sei** (`azureuser`), **dove sei** (`azmdb01`, cioè la VM) e **in quale cartella** (`~/mongodb`, dove `~` significa "la tua cartella personale"). Guardalo sempre: è il modo più semplice per capire se stai lavorando sulla VM o sul tuo PC.
 
 **sudo.** Messo davanti a un comando, lo esegue con i permessi di amministratore (come "Esegui come amministratore" in Windows). La prima volta può chiederti la password del tuo utente.
 
@@ -123,7 +123,7 @@ L'errore più comune è copiare solo una parte del blocco: il file non viene cre
 
 Le parti tra `< >`, come `<IP_PUBBLICO_VM>`, sono **segnaposto**: vanno sostituite con il valore reale, **togliendo anche i simboli `<` e `>`**.
 
-Esempio: `ssh azureuserdgs@<IP_PUBBLICO_VM>` diventa `ssh azureuserdgs@20.123.45.67`.
+Esempio: `ssh azureuser@<IP_PUBBLICO_VM>` diventa `ssh azureuser@20.123.45.67`.
 
 | Segnaposto | Cosa inserire | Dove trovarlo |
 |---|---|---|
@@ -131,7 +131,7 @@ Esempio: `ssh azureuserdgs@<IP_PUBBLICO_VM>` diventa `ssh azureuserdgs@20.123.45
 | `<IP_PRIVATO_VM>` | Indirizzo interno della VM (es. `172.16.0.4`) | Comando nella Parte 11.2 |
 | `<IL_TUO_IP>` | Indirizzo pubblico del tuo PC/ufficio | Cerca "what is my ip" nel browser del tuo PC |
 
-In questa guida l'utente della VM è `azureuserdgs`: se il tuo è diverso, sostituiscilo.
+In questa guida l'utente della VM è `azureuser`: se il tuo è diverso, sostituiscilo.
 
 ### 1.4 "Non è successo niente": è normale
 
@@ -165,11 +165,11 @@ Su Windows 10/11 premi il tasto Windows, scrivi **PowerShell** e aprilo. Il coma
 Quando hai creato la VM su Azure hai scelto un metodo di accesso: di solito una **chiave SSH** (un file `.pem` scaricato al momento della creazione).
 
 ```powershell
-ssh -i C:\percorso\della\chiave.pem azureuserdgs@<IP_PUBBLICO_VM>
+ssh -i C:\percorso\della\chiave.pem azureuser@<IP_PUBBLICO_VM>
 ```
 
 - La prima volta ti chiede di confermare l'identità del server: scrivi `yes` e premi Invio.
-- Se tutto va bene, il prompt cambia in `azureuserdgs@azmdb01:~$`: **ora sei sulla VM**.
+- Se tutto va bene, il prompt cambia in `azureuser@azmdb01:~$`: **ora sei sulla VM**.
 
 Se il collegamento non riesce, vedi la [Parte 15](#parte-15--quando-qualcosa-va-storto), voce "Non riesco a collegarmi con SSH".
 
@@ -181,7 +181,7 @@ Scrivi `exit` e premi Invio: torni al terminale del tuo PC.
 
 ## Parte 3 — Controlli preliminari
 
-> 📍 **Dove:** sulla VM (prompt `azureuserdgs@azmdb01`).
+> 📍 **Dove:** sulla VM (prompt `azureuser@azmdb01`).
 
 ### 3.1 La CPU supporta MongoDB 8.0?
 
@@ -311,7 +311,7 @@ mkdir -p ~/mongodb
 cd ~/mongodb
 ```
 
-✅ Il prompt diventa `azureuserdgs@azmdb01:~/mongodb$`.
+✅ Il prompt diventa `azureuser@azmdb01:~/mongodb$`.
 
 > ⚠️ **Da qui in avanti, i comandi `docker compose` funzionano solo se sei dentro questa cartella.** Se chiudi e riapri la sessione, ricordati di rientrarci con `cd ~/mongodb`.
 
@@ -790,7 +790,7 @@ Per come lo abbiamo configurato, MongoDB accetta connessioni **solo dalla VM ste
 > 📍 **Dove:** sul tuo PC (non sulla VM!). Apri un **nuovo** terminale PowerShell.
 
 ```powershell
-ssh -i C:\percorso\della\chiave.pem -N -L 27017:127.0.0.1:27017 azureuserdgs@<IP_PUBBLICO_VM>
+ssh -i C:\percorso\della\chiave.pem -N -L 27017:127.0.0.1:27017 azureuser@<IP_PUBBLICO_VM>
 ```
 
 **Cosa significano le opzioni:**
@@ -813,7 +813,7 @@ mongodb://appuser:PASSWORD@127.0.0.1:27017/appdb?authSource=appdb&directConnecti
 ```
 Host mongo-azure
     HostName <IP_PUBBLICO_VM>
-    User azureuserdgs
+    User azureuser
     IdentityFile C:\percorso\della\chiave.pem
     LocalForward 27017 127.0.0.1:27017
     ServerAliveInterval 60
@@ -827,7 +827,7 @@ ssh -N mongo-azure
 
 `ServerAliveInterval 60` evita che il tunnel si chiuda da solo quando resta inattivo.
 
-**Con MongoDB Compass** (l'interfaccia grafica ufficiale di MongoDB) non serve nemmeno il comando: nella nuova connessione apri *Advanced Connection Options* → scheda *Proxy/SSH* → *SSH with Identity File*, e inserisci indirizzo della VM, utente `azureuserdgs` e il file della chiave. Come stringa di connessione usa quella qui sopra.
+**Con MongoDB Compass** (l'interfaccia grafica ufficiale di MongoDB) non serve nemmeno il comando: nella nuova connessione apri *Advanced Connection Options* → scheda *Proxy/SSH* → *SSH with Identity File*, e inserisci indirizzo della VM, utente `azureuser` e il file della chiave. Come stringa di connessione usa quella qui sopra.
 
 ### 11.2 Accesso diretto (solo per sviluppo)
 
@@ -1267,7 +1267,7 @@ La configurazione di questa guida è adatta allo sviluppo. Prima di metterci dat
 
 | Cosa | Dove |
 |---|---|
-| Cartella di lavoro | `~/mongodb` (cioè `/home/azureuserdgs/mongodb`) |
+| Cartella di lavoro | `~/mongodb` (cioè `/home/azureuser/mongodb`) |
 | Configurazione del container | `~/mongodb/docker-compose.yml` |
 | Password di `admin` | `~/mongodb/mongo_root_password.txt` |
 | Password di `appuser` | `~/mongodb/appuser_password.txt` |
@@ -1325,7 +1325,7 @@ ls /var/run/reboot-required
 
 ```powershell
 # Collegarsi alla VM
-ssh -i C:\percorso\della\chiave.pem azureuserdgs@<IP_PUBBLICO_VM>
+ssh -i C:\percorso\della\chiave.pem azureuser@<IP_PUBBLICO_VM>
 
 # Aprire il tunnel verso MongoDB (con il file ~/.ssh/config configurato)
 ssh -N mongo-azure
