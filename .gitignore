@@ -19,3 +19,9 @@ desktop.ini
 .idea/
 *.swp
 *.bak
+
+# Certificati TLS e chiavi (vedi docs/01-*)
+tls/
+*.crt
+*.csr
+*.srl

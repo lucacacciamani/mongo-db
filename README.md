@@ -22,16 +22,20 @@ Il setup è pensato per ambienti di **sviluppo e test**, con una checklist dedic
 
 ## Cosa comprende
 
-Autenticazione, utente applicativo con permessi limitati, backup automatici con retention giornaliera/settimanale/mensile, accesso dall'ambiente di sviluppo (tunnel SSH o accesso diretto), gestione dei log e hardening di base del sistema (aggiornamenti automatici, SSH solo con chiave).
+Autenticazione, utente applicativo con permessi limitati, backup automatici con retention giornaliera/settimanale/mensile, accesso dall'ambiente di sviluppo (tunnel SSH o accesso diretto), gestione dei log e hardening di base del sistema (aggiornamenti automatici, SSH solo con chiave). Una seconda parte copre la cifratura delle connessioni con **TLS**, tramite una CA privata.
 
 > **Perché Docker?** L'immagine Docker ufficiale di MongoDB include tutte le dipendenze, quindi funziona su Debian 13 senza forzature, e rende semplici aggiornamenti e rimozione.
 
 ## Documentazione
 
-| Guida | Per chi |
-|---|---|
-| [Guida completa](docs/guida-completa.md) | Chi ha poca esperienza con Linux, Docker o MongoDB: ogni passaggio spiega cosa fa il comando e cosa aspettarsi |
-| [Guida rapida](docs/guida-rapida.md) | Chi conosce già l'ambiente: sequenza dei comandi con spiegazioni essenziali |
+Le guide sono numerate nell'ordine in cui vanno seguite. Ogni argomento ha due versioni: una **completa**, per chi ha poca esperienza con Linux, Docker o MongoDB (ogni passaggio spiega cosa fa il comando e cosa aspettarsi), e una **rapida**, per chi conosce già l'ambiente (sequenza dei comandi con spiegazioni essenziali).
+
+| # | Argomento | Guida completa | Guida rapida |
+|---|---|---|---|
+| 00 | Installazione, sicurezza di base, utente applicativo, backup, accesso, manutenzione | [00-guida-completa](docs/00-guida-completa.md) | [00-guida-rapida](docs/00-guida-rapida.md) |
+| 01 | Cifratura delle connessioni con TLS (CA privata, client, rinnovi) | [01-tls-guida-completa](docs/01-tls-guida-completa.md) | [01-tls-guida-rapida](docs/01-tls-guida-rapida.md) |
+
+La guida 01 presuppone di aver completato la 00.
 
 ## Struttura del repository
 
@@ -39,17 +43,21 @@ Autenticazione, utente applicativo con permessi limitati, backup automatici con 
 .
 ├── README.md
 ├── docs/
-│   ├── guida-completa.md
-│   └── guida-rapida.md
+│   ├── 00-guida-completa.md
+│   ├── 00-guida-rapida.md
+│   ├── 01-tls-guida-completa.md
+│   └── 01-tls-guida-rapida.md
 └── config/
-    ├── docker-compose.yml     → ~/mongodb/docker-compose.yml
-    ├── mongo-backup.sh        → /usr/local/bin/mongo-backup.sh
-    ├── mongo-backup.service   → /etc/systemd/system/mongo-backup.service
-    ├── mongo-backup.timer     → /etc/systemd/system/mongo-backup.timer
-    └── mongodb-thp.conf       → /etc/tmpfiles.d/mongodb-thp.conf
+    ├── docker-compose.yml          → ~/mongodb/docker-compose.yml (senza TLS)
+    ├── docker-compose-tls.yml      → ~/mongodb/docker-compose.yml (con TLS)
+    ├── genera-certificati-tls.sh   → ~/mongodb/tls/ (crea o rinnova i certificati)
+    ├── mongo-backup.sh             → /usr/local/bin/mongo-backup.sh
+    ├── mongo-backup.service        → /etc/systemd/system/mongo-backup.service
+    ├── mongo-backup.timer          → /etc/systemd/system/mongo-backup.timer
+    └── mongodb-thp.conf            → /etc/tmpfiles.d/mongodb-thp.conf
 ```
 
-I file in `config/` sono gli stessi riportati nelle guide, pronti da copiare sulla VM nei percorsi indicati.
+I file in `config/` sono gli stessi riportati nelle guide, pronti da copiare sulla VM nei percorsi indicati. Lo script di backup funziona sia con sia senza TLS: rileva da solo la configurazione attiva.
 
 ## Requisiti
 
@@ -72,13 +80,14 @@ sudo docker compose up -d
 sudo docker exec -it mongo mongosh -u admin -p --authenticationDatabase admin
 ```
 
-Per utente applicativo, backup, accesso remoto e hardening segui la [guida rapida](docs/guida-rapida.md) o la [guida completa](docs/guida-completa.md).
+Per utente applicativo, backup, accesso remoto e hardening segui la [guida rapida](docs/00-guida-rapida.md) o la [guida completa](docs/00-guida-completa.md); per il TLS, le guide [01](docs/01-tls-guida-completa.md).
 
 ## Note di sicurezza
 
 - Le password **non** fanno parte del repository: vengono generate sulla VM e conservate in file leggibili solo da root (esclusi tramite `.gitignore`).
 - Di default MongoDB è raggiungibile solo da `127.0.0.1` della VM. Non pubblicare mai la porta su `0.0.0.0`: Docker scavalca il firewall di sistema.
-- L'accesso diretto sulla porta 27017 descritto nelle guide è pensato **solo per lo sviluppo**: senza TLS il traffico viaggia in chiaro. Per la produzione consulta la checklist finale delle guide.
+- L'accesso diretto sulla porta 27017 senza TLS è pensato **solo per lo sviluppo**, perché il traffico viaggia in chiaro: per cifrarlo segui le guide 01. Per la produzione consulta la checklist finale delle guide.
+- La chiave privata della CA (`ca.key`) e le chiavi del server non devono mai finire nel repository né restare senza protezione: le guide 01 spiegano come custodirle.
 
 ## Versioni di riferimento
 

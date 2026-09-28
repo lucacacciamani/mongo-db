@@ -1,6 +1,6 @@
 #!/bin/bash
 # Backup MongoDB con retention giornaliera/settimanale/mensile
-# Installazione: /usr/local/bin/mongo-backup.sh (chmod 700) - vedi docs/guida-completa.md, Parte 9
+# Installazione: /usr/local/bin/mongo-backup.sh (chmod 700) - vedi docs/00-guida-completa.md, Parte 9
 set -euo pipefail
 umask 077
 
@@ -15,7 +15,9 @@ FILE="$DEST/daily/mongo-$(date +%Y%m%d-%H%M%S).archive.gz"
 docker exec -i mongo sh -c '
   umask 077
   printf "password: %s\n" "$(cat /run/secrets/mongo_root_password)" > /tmp/dump.yaml
-  mongodump --config=/tmp/dump.yaml -u admin --authenticationDatabase admin --archive --gzip --quiet
+  TLS=""
+  [ -f /etc/mongo/tls/ca.pem ] && TLS="--ssl --sslCAFile=/etc/mongo/tls/ca.pem"
+  mongodump $TLS --config=/tmp/dump.yaml -u admin --authenticationDatabase admin --archive --gzip --quiet
   status=$?
   rm -f /tmp/dump.yaml
   exit $status
