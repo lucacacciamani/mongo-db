@@ -11,6 +11,8 @@
 
 **Tempo stimato:** 45–60 minuti.
 
+**Stato di verifica:** le Parti 2–9 sono state eseguite e collaudate su un'installazione reale. Le procedure di rinnovo del certificato (Parte 10) e di rollback (Parte 11) non sono ancora state collaudate: sono segnalate con il simbolo 🧪.
+
 ---
 
 ## Indice
@@ -267,22 +269,78 @@ ls -l
 
 Come per il file della password (guida 00, Parte 6.2), `server.pem` appartiene all'utente con numero 999, cioè all'utente con cui MongoDB gira dentro il container.
 
+> **Il gruppo `systemd-journal`.** Nell'elenco `server.pem` può risultare del gruppo `systemd-journal`. È normale e innocuo: sulla VM il numero 999 corrisponde per coincidenza a quel gruppo di sistema. Conta solo che i permessi siano `-rw-------`.
+
 ### 5.2 Mettere al sicuro la chiave della CA
 
-`ca.key` è il file più delicato: con quello chiunque potrebbe firmare certificati considerati validi dai tuoi client. Sulla VM serve solo nel momento in cui firmi un certificato, quindi è meglio conservarlo altrove.
+`ca.key` è il file più delicato: con quello chiunque potrebbe firmare certificati considerati validi dai tuoi client. Sulla VM serve solo nel momento in cui firmi un certificato. Qui la copiamo sul tuo PC; poi puoi scegliere se cancellarla dalla VM (più sicuro) o tenerla anche lì (più comodo per i rinnovi).
+
+#### Come funziona `scp`
+
+`scp` copia file attraverso SSH. Si lancia **dal tuo PC**, in PowerShell, ed è il PC che "va a prendere" i file sulla VM. Il formato è:
+
+```
+scp [opzioni] ORIGINE DESTINAZIONE
+```
+
+- L'origine sulla VM si scrive `utente@indirizzo:percorso` (lì `~` indica la tua cartella personale sulla VM).
+- La destinazione sul PC è un percorso normale di Windows. Se è una **cartella**, il file mantiene il suo nome; se indichi anche un nome di file, viene salvato con quel nome.
+- Utente, indirizzo ed eventuale chiave sono **gli stessi del comando `ssh`** con cui entri nella VM. Se ti colleghi con un file di chiave, aggiungi `-i C:\percorso\della\chiave` (è il file scaricato da Azure alla creazione della VM, di solito `<nome-vm>_key.pem`, oppure una chiave in `C:\Users\<tuo-nome>\.ssh\`); se ti colleghi con la password, ometti `-i` e `scp` te la chiederà.
+- I percorsi con spazi vanno racchiusi tra virgolette.
+
+#### 1. Crea una cartella sicura sul PC
+
+> 📍 **Dal tuo PC**, in PowerShell (non nel terminale della VM!):
+
+```powershell
+mkdir C:\Users\<tuo-nome>\mongodb-ca -Force
+```
+
+Scegli una cartella **fuori dal repository Git** del progetto: così non rischi di pubblicare la chiave per errore.
+
+> ⚠️ Se lanci questo `mkdir` nel terminale della VM invece che in PowerShell, Linux crea una cartella dal nome strano, per esempio `C:Users<tuo-nome>mongodb-ca`, perché non conosce i percorsi di Windows e toglie le barre rovesciate. È innocua: la elimini dalla VM con `rmdir 'C:Users<tuo-nome>mongodb-ca'` (con le virgolette).
+
+#### 2. Copia la chiave e il contatore
 
 > 📍 **Dal tuo PC**, in PowerShell:
 
 ```powershell
-scp -i C:\percorso\della\chiave.pem azureuser@<IP_PUBBLICO_VM>:~/mongodb/tls/ca.key C:\percorso\sicuro\ca.key
-scp -i C:\percorso\della\chiave.pem azureuser@<IP_PUBBLICO_VM>:~/mongodb/tls/ca.srl C:\percorso\sicuro\ca.srl
+scp azureuser@<IP_PUBBLICO_VM>:~/mongodb/tls/ca.key C:\Users\<tuo-nome>\mongodb-ca\
+scp azureuser@<IP_PUBBLICO_VM>:~/mongodb/tls/ca.srl C:\Users\<tuo-nome>\mongodb-ca\
 ```
 
-Conserva `ca.key` in un posto protetto: un password manager che supporta allegati, Azure Key Vault o una cartella cifrata. **Non** metterlo nel repository Git e non lasciarlo in una cartella sincronizzata senza protezione.
+(Aggiungi `-i C:\percorso\della\chiave` dopo `scp` se accedi alla VM con un file di chiave.)
 
-Solo dopo aver verificato che la copia sul PC esista, eliminalo dalla VM:
+- Al primo collegamento da quel PC può comparire *The authenticity of host ... can't be established*: rispondi `yes`, come per `ssh`.
+- ✅ Per ogni file devi vedere una riga con `100%`. `ca.key` pesa circa 3,2 KB, `ca.srl` poche decine di byte.
 
-> 📍 **Sulla VM:**
+#### 3. Verifica che la copia sia identica
+
+Prima di fidarti della copia, confronta le impronte dei due file.
+
+📍 Sulla VM:
+
+```bash
+sha256sum ~/mongodb/tls/ca.key
+```
+
+📍 Sul PC:
+
+```powershell
+Get-FileHash C:\Users\<tuo-nome>\mongodb-ca\ca.key -Algorithm SHA256
+```
+
+✅ Le due sequenze devono essere uguali (PowerShell le mostra in maiuscolo, Linux in minuscolo: contano solo lettere e cifre).
+
+#### 4. Custodisci la copia
+
+Conserva la cartella `mongodb-ca` in un posto protetto e con backup: un password manager che accetta allegati, Azure Key Vault, una cartella cifrata (per esempio con BitLocker). Evita le cartelle sincronizzate su cloud senza cifratura, e **non** metterla nel repository Git.
+
+#### 5. Scegli: cancellare la chiave dalla VM o tenerla?
+
+**Opzione A — Cancellarla (consigliato, obbligatorio in produzione).** Solo dopo aver verificato le impronte:
+
+📍 Sulla VM:
 
 ```bash
 cd ~/mongodb/tls
@@ -290,11 +348,14 @@ shred -u ca.key
 ls
 ```
 
-`shred -u` sovrascrive il file prima di cancellarlo, così non è recuperabile.
+`shred -u` sovrascrive il file prima di cancellarlo, così non è recuperabile. ✅ In `ls` non deve più comparire `ca.key`; devono restare `ca.pem`, `ca.srl`, `server.crt`, `server.ext`, `server.key`, `server.pem`. Da questo momento la chiave esiste solo sul PC: al rinnovo andrà riportata sulla VM (Parte 10).
 
-✅ In `ls` non deve più comparire `ca.key`. Devono restare `ca.pem`, `ca.srl`, `server.crt`, `server.ext`, `server.key`, `server.pem`.
+**Opzione B — Tenerla anche sulla VM (accettabile in sviluppo e laboratorio).** Hai due copie verificate e i rinnovi sono più semplici. In cambio, chi accede alla VM con il tuo utente o con `sudo` può leggerla. Riduci il rischio così:
 
-> Per un ambiente di puro laboratorio puoi anche lasciare `ca.key` sulla VM con permessi `600`: è una scelta di comodità, non di sicurezza.
+- verifica i permessi: `ls -l ~/mongodb/tls/ca.key` deve mostrare `-rw-------` e `ls -ld ~/mongodb/tls` deve mostrare `drwx------`;
+- non montare mai l'intera cartella `./tls` nel container: nel compose si montano solo `server.pem` e `ca.pem`, quindi MongoDB non vede la chiave;
+- ricorda che la chiave non finisce nei backup di MongoDB, ma **finisce** in eventuali snapshot o backup dell'intera VM (per esempio con Azure Backup);
+- se vuoi un livello in più, rendila leggibile solo da root con `sudo chown root:root ~/mongodb/tls/ca.key` (al rinnovo servirà `sudo` per il comando di firma).
 
 ---
 
@@ -383,6 +444,8 @@ Rispetto al compose della guida 00 ci sono due novità.
 
 ### 6.3 Controllare e applicare
 
+> ⚠️ **Da questo momento i client esistenti smettono di collegarsi.** Con `requireTLS`, ogni connessione già configurata senza TLS (la tua applicazione, Compass, l'estensione MongoDB di VS Code, script) verrà rifiutata finché non la aggiorni come descritto nella Parte 9. Se qualcuno sta lavorando sul database, avvisalo prima.
+
 ```bash
 sudo docker compose config --quiet && echo "compose valido"
 sudo docker compose up -d
@@ -432,7 +495,9 @@ sudo docker exec -it mongo mongosh --tls --tlsCAFile /etc/mongo/tls/ca.pem \
   -u admin -p --authenticationDatabase admin
 ```
 
-✅ Dopo la password, compare il prompt `test>`. Esci con `exit`.
+✅ Dopo la password, compare il prompt `test>`. **Esci con `exit`** prima di proseguire.
+
+> Finché il prompt è `test>` sei dentro la shell di MongoDB, che accetta solo comandi JavaScript. Se lanci lì un comando come `sudo docker ...` ottieni `SyntaxError: Missing semicolon`: non è un problema del TLS, basta uscire con `exit` e tornare al prompt `azureuser@mongo-vm:~/mongodb$`.
 
 ### 7.5 La prova del contrario
 
@@ -496,6 +561,18 @@ sudo chmod 700 /usr/local/bin/mongo-backup.sh
 
 > Gli strumenti di backup di MongoDB usano ancora i nomi storici `--ssl` e `--sslCAFile`, ma il protocollo è il TLS.
 
+> ⚠️ **Incolla il blocco dalla riga `sudo tee` fino a `sudo chmod` compresi.** Le righe con `TLS=""` e `mongodump $TLS ...` sono una parte dello script: se le esegui da sole ottieni `mongodump: command not found`, perché `mongodump` esiste solo dentro il container. Non fa danni, ma lo script non viene aggiornato.
+
+Verifica che lo script contenga la parte sul TLS:
+
+```bash
+sudo grep -n "TLS" /usr/local/bin/mongo-backup.sh
+```
+
+✅ Devono comparire tre righe: `TLS=""`, `[ -f /etc/mongo/tls/ca.pem ] ...` e `mongodump $TLS ...`.
+
+> **Se sulla VM avevi una versione precedente dello script**, che salvava i backup direttamente in `/var/backups/mongodb` invece che nelle sottocartelle `daily`, `weekly` e `monthly`, quei vecchi file non vengono più gestiti dalla pulizia automatica. Dopo aver verificato che i nuovi backup funzionano (Parte 8.2), eliminali con: `sudo sh -c 'rm -f /var/backups/mongodb/mongo-*.archive.gz'`.
+
 ### 8.2 Provare il backup
 
 ```bash
@@ -515,6 +592,8 @@ sudo sh -c 'f=$(ls -t /var/backups/mongodb/daily/mongo-*.archive.gz | head -1); 
 
 È lo stesso comando della guida 00 (Parte 10.1), con in più `--ssl --sslCAFile=...`. Come allora, `--drop` sostituisce le collezioni presenti nel backup.
 
+✅ **Devi vedere, alla fine:** `N document(s) restored successfully. 0 document(s) failed to restore.` Se nel database ci sono già dei documenti, N sarà maggiore di zero: è la prova più convincente che backup e ripristino funzionano attraverso il TLS. Puoi controllare che i dati siano al loro posto con il comando della Parte 8.4, sostituendo `db.runCommand({ ping: 1 })` con `db.<nome collezione>.find()`.
+
 ### 8.4 I comandi con l'utente applicativo
 
 Ai comandi della guida 00 che usano `mongosh` va aggiunto `--tls --tlsCAFile /etc/mongo/tls/ca.pem`. Per esempio, la verifica di `appuser`:
@@ -532,13 +611,20 @@ sudo docker exec -it -e APP_PWD="$(sudo cat ~/mongodb/appuser_password.txt)" mon
 
 ### 9.1 Portare `ca.pem` sul tuo PC
 
-> 📍 **Dal tuo PC**, in PowerShell:
+Ogni client ha bisogno del certificato della CA per verificare il server. È un passo **diverso** dalla copia di `ca.key` fatta nella Parte 5.2: quella serviva a custodire la chiave, questa serve al client.
+
+> 📍 **Dal tuo PC**, in PowerShell (con `-i C:\percorso\della\chiave` se accedi alla VM con un file di chiave):
 
 ```powershell
-scp -i C:\percorso\della\chiave.pem azureuser@<IP_PUBBLICO_VM>:~/mongodb/tls/ca.pem C:\percorso\progetto\ca.pem
+scp azureuser@<IP_PUBBLICO_VM>:~/mongodb/tls/ca.pem C:\Users\<tuo-nome>\mongodb-ca\ca.pem
+dir C:\Users\<tuo-nome>\mongodb-ca
 ```
 
-`ca.pem` **non è un segreto**: contiene solo la parte pubblica della CA. Puoi tenerlo nella cartella del progetto e condividerlo con chi deve collegarsi. Ricorda però che i file da proteggere, `ca.key`, `server.key` e `server.pem`, non devono mai finire nel repository.
+✅ Nell'elenco deve comparire `ca.pem` (circa 1,8 KB), accanto a `ca.key` e `ca.srl` se li hai copiati nella stessa cartella.
+
+Conviene un percorso **senza spazi**, come questo: nelle stringhe di connessione evita di dover codificare gli spazi (vedi 9.2).
+
+`ca.pem` **non è un segreto**: contiene solo la parte pubblica della CA. Puoi tenerlo anche nella cartella del progetto e condividerlo con chi deve collegarsi. I file da proteggere, `ca.key`, `server.key` e `server.pem`, non devono invece mai finire nel repository.
 
 ### 9.2 Le stringhe di connessione
 
@@ -591,13 +677,50 @@ Passando `tlsCAFile` come opzione separata, gli spazi nel percorso non sono un p
 
 Se ti colleghi tramite il tunnel SSH configurato in Compass, le impostazioni TLS si aggiungono a quelle della scheda *Proxy/SSH*.
 
-### 9.5 Il firewall di Azure
+### 9.5 L'estensione MongoDB for VS Code
+
+L'estensione usa lo stesso motore di connessione di Compass. La connessione salvata prima del TLS non funziona più: va modificata o ricreata.
+
+**Modificare la connessione esistente:**
+
+1. Apri la sezione **MongoDB** nella barra laterale di VS Code (l'icona a forma di foglia).
+2. Tasto destro sulla connessione → **Edit Connection** (a seconda della versione la voce può chiamarsi diversamente o comparire passando il mouse sulla connessione).
+3. Nella stringa di connessione aggiungi in fondo `&tls=true&tlsCAFile=C:/Users/<tuo-nome>/mongodb-ca/ca.pem` (se la stringa non contiene ancora un `?`, il primo parametro va preceduto da `?` invece che da `&`); oppure, nelle opzioni avanzate, scheda **TLS/SSL**, imposta **On** e seleziona `ca.pem` come *Certificate Authority*.
+4. Salva e connettiti.
+
+**Oppure crearne una nuova:** palette dei comandi (**Ctrl+Shift+P**) → **MongoDB: Connect with Connection String**, e incolla per esempio:
+
+```
+mongodb://appuser:PASSWORD@<IP_PUBBLICO_VM>:27017/appdb?authSource=appdb&directConnection=true&tls=true&tlsCAFile=C:/Users/<tuo-nome>/mongodb-ca/ca.pem
+```
+
+Per l'amministratore: `mongodb://admin:PASSWORD@<IP_PUBBLICO_VM>:27017/?authSource=admin&directConnection=true&tls=true&tlsCAFile=...`. Poi elimina la vecchia connessione (tasto destro → *Remove Connection*).
+
+Le password generate con i comandi di queste guide contengono solo lettere e numeri, quindi si possono incollare nella stringa così come sono; caratteri come `@`, `:` o `/` andrebbero invece codificati.
+
+Una volta connesso, anche i *Playground* dell'estensione usano la connessione cifrata.
+
+### 9.6 Si può fare a meno del file `ca.pem` sul client?
+
+Una domanda frequente. Va chiarito che **sul server non esiste un'opzione che lo permetta**: il server impone la cifratura e presenta il suo certificato; è il **client** che decide se verificarlo, e per farlo deve sapere di quale CA fidarsi. Le possibilità sono tre:
+
+| Soluzione | Come | Protezione |
+|---|---|---|
+| **Indicare il file** (consigliata) | `tlsCAFile` nella stringa o nelle opzioni, come in questa guida | Completa |
+| **Installare la CA in Windows** | Rinomina `ca.pem` in `ca.crt`, doppio clic → *Installa certificato* → *Utente corrente* → archivio **Autorità di certificazione radice attendibili**. Poi nella stringa basta `tls=true`. Funziona solo con i programmi che leggono l'archivio di Windows: le versioni recenti degli strumenti MongoDB (Compass, mongosh, estensione VS Code) e le applicazioni .NET di solito sì; Node.js, Java e Python hanno invece archivi propri e richiedono configurazioni specifiche | Completa |
+| **Disattivare la verifica** | `tls=true&tlsAllowInvalidCertificates=true`, senza file | **Solo cifratura**: il client accetterebbe anche un server impostore. Da usare al massimo per sbloccarsi temporaneamente, mai con dati reali |
+
+Il file resta la soluzione più semplice e affidabile: si copia una volta, non è un segreto e resta valido per tutti i dieci anni della CA, anche quando rinnovi il certificato del server.
+
+### 9.7 Il firewall di Azure
 
 Il TLS protegge il traffico, **non** il database da chi prova a indovinare le password. La regola NSG sulla porta 27017 deve continuare ad avere come origine solo gli IP autorizzati, mai "Any".
 
 ---
 
 ## Parte 10 — Rinnovare il certificato
+
+> 🧪 **Procedura non ancora collaudata.** Questa parte è stata scritta con cura ma, a differenza delle Parti 2–9, non è ancora stata eseguita su un'installazione reale. Anche lo script `config/genera-certificati-tls.sh` è stato provato solo in un ambiente di test (creazione e rinnovo del certificato), non su una VM con MongoDB in esecuzione. Se la esegui, fallo prima in un ambiente di sviluppo, tieni a portata di mano il rollback della Parte 11 e segnala eventuali differenze rispetto a quanto descritto.
 
 Il certificato del server scade dopo 825 giorni. Scaduto quello, **nessun client riesce più a collegarsi**: conviene rinnovarlo con qualche settimana di anticipo.
 
@@ -614,10 +737,10 @@ Segna la data di scadenza in calendario, con un promemoria un mese prima.
 
 ### 10.2 Rinnovare
 
-1. **Riporta sulla VM** la chiave della CA e il contatore. 📍 Dal tuo PC:
+1. **Riporta sulla VM** la chiave della CA e il contatore (se l'hai tenuta anche sulla VM, salta questo passo). 📍 Dal tuo PC:
 
    ```powershell
-   scp -i C:\percorso\della\chiave.pem C:\percorso\sicuro\ca.key C:\percorso\sicuro\ca.srl azureuser@<IP_PUBBLICO_VM>:~/mongodb/tls/
+   scp C:\Users\<tuo-nome>\mongodb-ca\ca.key C:\Users\<tuo-nome>\mongodb-ca\ca.srl azureuser@<IP_PUBBLICO_VM>:~/mongodb/tls/
    ```
 
 2. **Rigenera il certificato del server.** 📍 Sulla VM:
@@ -646,7 +769,7 @@ Segna la data di scadenza in calendario, con un promemoria un mese prima.
 
 4. **Verifica** con i comandi della Parte 7.2 e 7.4, poi controlla la nuova scadenza (10.1).
 
-5. **Rimetti al sicuro la CA:** copia sul PC il `ca.srl` aggiornato (📍 dal PC, come nella Parte 5.2) ed elimina di nuovo `ca.key` dalla VM con `shred -u ~/mongodb/tls/ca.key`.
+5. **Rimetti al sicuro la CA:** copia sul PC il `ca.srl` aggiornato (📍 dal PC, come nella Parte 5.2). Se avevi scelto di non tenere la chiave sulla VM (Parte 5.2, opzione A), eliminala di nuovo con `shred -u ~/mongodb/tls/ca.key`.
 
 ✅ **I client non devono cambiare nulla:** il nuovo certificato è firmato dalla stessa CA, e il loro `ca.pem` resta valido.
 
@@ -659,6 +782,8 @@ Fra dieci anni scadrà anche `ca.pem`. A quel punto va creata una nuova CA (Part
 ---
 
 ## Parte 11 — Tornare indietro (disattivare il TLS)
+
+> 🧪 **Procedura non ancora collaudata.** Questa parte è stata scritta con cura ma non è ancora stata eseguita su un'installazione reale. Prima di contarci in un'emergenza, conviene provarla una volta in un ambiente di sviluppo: è breve e non tocca i dati.
 
 Se qualcosa non funziona e ti serve rimettere tutto com'era, per esempio per sbloccare un'applicazione:
 
@@ -702,6 +827,19 @@ Per riattivare il TLS: `cp docker-compose.yml.tls docker-compose.yml && sudo doc
 | Errore sul file CA con un percorso Windows | Barre rovesciate o spazi nella stringa di connessione | Usa `/` al posto di `\`, `%20` al posto degli spazi, oppure l'opzione separata (Parte 9.3) |
 | `Authentication failed` | Non è un problema TLS: password errata | Vedi guida 00, Parte 15 |
 
+### Durante la procedura
+
+| Sintomo | Causa | Soluzione |
+|---|---|---|
+| `SyntaxError: Missing semicolon` dopo un comando `sudo ...` | Il comando è stato scritto dentro la shell di MongoDB (prompt `test>`) | Esci con `exit` e rilancialo nel terminale della VM |
+| `mongodump: command not found` | Sono state incollate solo alcune righe dello script di backup | Incolla il blocco intero della Parte 8.1, da `sudo tee` a `sudo chmod` |
+| Sulla VM compare una cartella chiamata `C:Users...` | Un comando per PowerShell (`mkdir C:\...`) è stato lanciato sulla VM | `rmdir 'C:Users...'` sulla VM, poi rilancia il comando in PowerShell sul PC |
+| `scp` chiede una password | Accedi alla VM con password e non con una chiave | Normale: inserisci la password. Per passare alle chiavi SSH vedi guida 00, Parte 13.2 |
+| `scp`: `No such file or directory` sulla destinazione | La cartella di destinazione sul PC non esiste | Creala prima con `mkdir` in PowerShell |
+| `scp`: `Permission denied (publickey)` | Chiave SSH non indicata o sbagliata | Usa lo stesso `-i ...` e lo stesso utente del comando `ssh` con cui entri nella VM |
+| `ca.pem` non c'è nella cartella del PC | È stata copiata solo la chiave della CA (Parte 5.2) | Esegui la copia della Parte 9.1 |
+| Un client che funzionava prima non si collega più | Con `requireTLS` le connessioni senza TLS sono rifiutate | Aggiorna il client come nella Parte 9 |
+
 ### Diagnosi rapida
 
 Per capire se il problema è nel TLS o altrove, dalla VM:
@@ -736,7 +874,8 @@ Il procedimento di questa guida è corretto anche per la produzione, con alcune 
 | Certificato della CA | `~/mongodb/tls/ca.pem` → nel container `/etc/mongo/tls/ca.pem` |
 | Certificato + chiave del server | `~/mongodb/tls/server.pem` → nel container `/etc/mongo/tls/server.pem` |
 | Impostazioni SAN per i rinnovi | `~/mongodb/tls/server.ext` |
-| Chiave della CA | **Fuori dalla VM**, in un posto sicuro (con `ca.srl`) |
+| Chiave della CA | Sul PC, cartella sicura fuori dal repository (es. `C:\Users\<tuo-nome>\mongodb-ca`), con `ca.srl`; eventualmente anche sulla VM con permessi `600` (Parte 5.2, opzione B) |
+| Certificato della CA per i client | Sul PC, es. `C:\Users\<tuo-nome>\mongodb-ca\ca.pem` |
 | Compose con TLS | `~/mongodb/docker-compose.yml` (copia in `docker-compose.yml.tls` dopo un rollback) |
 | Compose senza TLS | `~/mongodb/docker-compose.yml.pre-tls` |
 | Script di backup (compatibile TLS) | `/usr/local/bin/mongo-backup.sh` |

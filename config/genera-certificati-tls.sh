@@ -8,6 +8,9 @@
 # - Se ca.pem e ca.key non esistono, crea una nuova CA (valida 10 anni).
 # - Se ca.pem esiste, riusa la CA: serve ca.key (e ca.srl) nella cartella.
 # - Genera sempre un nuovo certificato del server (valido 825 giorni).
+#
+# STATO: provato in ambiente di test (creazione CA e rinnovo), non ancora
+# collaudato su una VM con MongoDB in esecuzione.
 set -euo pipefail
 umask 077
 

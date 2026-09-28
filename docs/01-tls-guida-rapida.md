@@ -3,6 +3,7 @@
 Cifratura delle connessioni a MongoDB con una CA privata: traffico cifrato e verifica del server, rinnovi trasparenti per i client. Presuppone il setup della guida `00-guida-rapida.md`.
 
 **Segnaposto:** `<IP_PUBBLICO_VM>`, `<IP_PRIVATO_VM>` (es. `10.0.0.4`). Utente VM d'esempio: `azureuser`.
+**Stato di verifica:** §1–6 collaudati su installazione reale; rinnovo (§7) e rollback (§9) non ancora collaudati (🧪).
 **Alternativa:** per un singolo sviluppatore il tunnel SSH offre la stessa sicurezza senza certificati (guida 00, §9.1).
 
 ---
@@ -60,7 +61,20 @@ chmod 600 ca.key server.key && chmod 644 ca.pem server.crt
 | `server.key`, `server.pem` | Sì | Solo VM |
 | `server.crt`, `server.ext` | No | VM (servono per verifiche e rinnovi) |
 
-**Custodia della CA:** copiare `ca.key` e `ca.srl` sul PC (`scp`), conservarli in un luogo sicuro, poi sulla VM `shred -u ~/mongodb/tls/ca.key`.
+**Custodia della CA** — dal PC, in PowerShell (stesso utente e stessa eventuale `-i <chiave>` del comando `ssh`; con accesso a password omettere `-i`):
+
+```powershell
+mkdir C:\Users\<tuo-nome>\mongodb-ca -Force            # fuori dal repository Git
+scp azureuser@<IP_PUBBLICO_VM>:~/mongodb/tls/ca.key C:\Users\<tuo-nome>\mongodb-ca\
+scp azureuser@<IP_PUBBLICO_VM>:~/mongodb/tls/ca.srl C:\Users\<tuo-nome>\mongodb-ca\
+Get-FileHash C:\Users\<tuo-nome>\mongodb-ca\ca.key -Algorithm SHA256   # confrontare con: sha256sum ~/mongodb/tls/ca.key (VM)
+```
+
+Poi, a scelta:
+- **produzione / consigliato:** `shred -u ~/mongodb/tls/ca.key` sulla VM (la chiave va riportata sulla VM solo per i rinnovi);
+- **sviluppo:** tenerla anche sulla VM, verificando `-rw-------` sul file e `drwx------` sulla cartella; non montare mai `./tls` intero nel container; attenzione a snapshot/backup della VM.
+
+`server.pem` risulta del gruppo `systemd-journal`: normale, è il GID 999 dell'host.
 
 ## 3. docker-compose.yml con TLS
 
@@ -113,6 +127,7 @@ sudo docker compose config --quiet && echo "compose valido"
 sudo docker compose up -d
 ```
 
+- ⚠️ All'`up -d` tutti i client configurati senza TLS (app, Compass, VS Code, script) smettono di collegarsi fino all'aggiornamento (§6).
 - `requireTLS`: rifiuta ogni connessione in chiaro (`allowTLS`/`preferTLS` solo per migrazioni graduali).
 - `tlsAllowConnectionsWithoutCertificates`: **indispensabile** con `tlsCAFile`, altrimenti MongoDB richiede un certificato client a tutti.
 - `tlsDisabledProtocols`: solo TLS 1.2 e 1.3.
@@ -129,6 +144,8 @@ sudo docker exec -it mongo mongosh --tls --tlsCAFile /etc/mongo/tls/ca.pem -u ad
 sudo docker exec -it mongo mongosh -u admin -p --authenticationDatabase admin --eval 'db.runCommand({ping:1})'   # deve FALLIRE
 ```
 
+Uscire da `mongosh` (`exit`) prima di lanciare il comando successivo: dentro il prompt `test>` un comando shell dà `SyntaxError: Missing semicolon`.
+
 ## 5. Backup e ripristino
 
 Lo script di backup va aggiornato, altrimenti con `requireTLS` i dump falliscono. La versione in `config/mongo-backup.sh` rileva da sola il TLS (presenza di `/etc/mongo/tls/ca.pem` nel container); la modifica rispetto alla guida 00 è nel blocco `docker exec`:
@@ -139,9 +156,13 @@ Lo script di backup va aggiornato, altrimenti con `requireTLS` i dump falliscono
   mongodump $TLS --config=/tmp/dump.yaml -u admin --authenticationDatabase admin --archive --gzip --quiet
 ```
 
+Installare lo script **intero** (da `sudo tee` a `sudo chmod`, vedi guida 00): le tre righe sopra eseguite da sole danno `mongodump: command not found`.
+
 ```bash
+sudo grep -n "TLS" /usr/local/bin/mongo-backup.sh     # 3 righe attese
 sudo /usr/local/bin/mongo-backup.sh
 sudo systemctl start mongo-backup.service && sudo journalctl -u mongo-backup.service -n 5 --no-pager
+sudo sh -c 'rm -f /var/backups/mongodb/mongo-*.archive.gz'   # vecchi dump fuori da daily/weekly/monthly, se presenti
 ```
 
 **Ripristino con TLS:**
@@ -155,8 +176,10 @@ Nei comandi `mongosh` della guida 00 aggiungere `--tls --tlsCAFile /etc/mongo/tl
 
 ## 6. Client
 
+Copia di `ca.pem` sul PC (passo distinto dalla custodia di `ca.key`; preferire un percorso senza spazi):
+
 ```powershell
-scp -i C:\percorso\chiave.pem azureuser@<IP_PUBBLICO_VM>:~/mongodb/tls/ca.pem C:\percorso\progetto\ca.pem
+scp azureuser@<IP_PUBBLICO_VM>:~/mongodb/tls/ca.pem C:\Users\<tuo-nome>\mongodb-ca\ca.pem
 ```
 
 Parametri da aggiungere alle URI della guida 00: `&tls=true&tlsCAFile=<percorso ca.pem>`.
@@ -174,10 +197,15 @@ Parametri da aggiungere alle URI della guida 00: `&tls=true&tlsCAFile=<percorso 
   ```
 
 - **Compass:** Advanced Connection Options → TLS/SSL → On → Certificate Authority = `ca.pem`.
+- **MongoDB for VS Code:** tasto destro sulla connessione → Edit Connection, oppure Ctrl+Shift+P → *MongoDB: Connect with Connection String*:
+  `mongodb://appuser:PWD@<IP_PUBBLICO_VM>:27017/appdb?authSource=appdb&directConnection=true&tls=true&tlsCAFile=C:/Users/<tuo-nome>/mongodb-ca/ca.pem`; rimuovere la vecchia connessione senza TLS.
+- **Senza file sul client:** il server non lo consente né lo impedisce, decide il client. Alternative al file: installare la CA nell'archivio Windows (*Autorità di certificazione radice attendibili*; funziona con i client che leggono l'archivio di sistema, es. strumenti MongoDB recenti e .NET), oppure `tlsAllowInvalidCertificates=true` (solo cifratura, nessuna verifica: da evitare).
 - ⛔ Mai `tlsAllowInvalidCertificates` / `tlsInsecure`: annullano la verifica del server.
 - NSG sulla 27017 sempre limitato agli IP autorizzati.
 
 ## 7. Rinnovo del certificato server
+
+> 🧪 **Non ancora collaudato** su un'installazione reale (lo script `genera-certificati-tls.sh` è stato provato solo in un ambiente di test). Provare prima in sviluppo, con il rollback (§9) a portata di mano.
 
 ```bash
 openssl x509 -in ~/mongodb/tls/server.crt -noout -enddate
@@ -187,7 +215,7 @@ openssl x509 -in ~/mongodb/tls/server.crt -noout -checkend $((30*86400)) && echo
 Procedura (i client non cambiano nulla, stessa CA):
 
 ```bash
-# 1. riportare ca.key e ca.srl in ~/mongodb/tls (scp dal PC)
+# 1. se ca.key non è sulla VM: riportare ca.key e ca.srl in ~/mongodb/tls (scp dal PC)
 cd ~/mongodb/tls && chmod 600 ca.key
 openssl genrsa -out server.key 2048
 openssl req -new -key server.key -subj "/CN=mongo-vm" -out server.csr
@@ -197,7 +225,7 @@ rm server.csr && openssl verify -CAfile ca.pem server.crt
 cat server.crt server.key | sudo tee server.pem > /dev/null
 sudo chown 999:999 server.pem && sudo chmod 600 server.pem && chmod 600 server.key
 cd ~/mongodb && sudo docker compose restart
-# 2. verificare (§4), ricopiare ca.srl sul PC, shred -u ~/mongodb/tls/ca.key
+# 2. verificare (§4), ricopiare ca.srl sul PC; se la CA non deve restare sulla VM: shred -u ~/mongodb/tls/ca.key
 ```
 
 In alternativa: `config/genera-certificati-tls.sh` (riusa la CA esistente). Alla scadenza della CA (10 anni) serve una nuova CA e la ridistribuzione di `ca.pem`.
@@ -214,10 +242,17 @@ In alternativa: `config/genera-certificati-tls.sh` (riusa la CA esistente). Alla
 | `certificate has expired` | Rinnovo (§7) |
 | Server: `No SSL certificate provided by peer` | Aggiungere `--tlsAllowConnectionsWithoutCertificates` |
 | Backup notturni falliti | Installare lo script compatibile TLS (§5) |
+| `SyntaxError: Missing semicolon` | Comando shell lanciato dentro `mongosh`: `exit` |
+| `mongodump: command not found` | Incollate solo alcune righe dello script: reinstallarlo intero |
+| Cartella `C:Users...` sulla VM | `mkdir` di PowerShell lanciato sulla VM: `rmdir 'C:Users...'` |
+| `scp` chiede la password | Accesso a password: normale; per le chiavi vedi guida 00 §11 |
+| `ca.pem` assente sul PC | Copiarlo (§6): è un passo distinto dalla copia di `ca.key` |
 
 Diagnosi: `openssl s_client ... | grep "Verify return code"` → `0 (ok)` = server a posto, problema lato client.
 
 ## 9. Rollback
+
+> 🧪 **Non ancora collaudato** su un'installazione reale: provarlo una volta in sviluppo prima di contarci in emergenza.
 
 ```bash
 cd ~/mongodb

@@ -643,6 +643,8 @@ Con un database quasi vuoto il file pesa solo 1–4 KB: è normale.
 
 ### 9.4 Programmare il backup ogni notte
 
+> Collaudati: backup manuale, esecuzione tramite systemd e ripristino. La creazione delle copie settimanali (domenica) e mensili (giorno 1) e la pulizia per scadenza non sono ancora state osservate su un periodo reale 🧪.
+
 Usiamo i *timer* di systemd, il sistema che in Debian gestisce i servizi e le attività programmate. Servono due file: uno che dice **cosa** fare (`.service`) e uno che dice **quando** (`.timer`). Incolla tutto il blocco:
 
 ```bash
@@ -787,6 +789,8 @@ Per come lo abbiamo configurato, MongoDB accetta connessioni **solo dalla VM ste
 
 ### 11.1 Tunnel SSH (consigliato)
 
+> 🧪 **Non ancora collaudato** su un'installazione reale: durante il collaudo è stato usato l'accesso diretto della Parte 11.2. I comandi sono standard, ma segnala eventuali differenze.
+
 **Idea:** usi il collegamento SSH, che già funziona e cifra tutto, come un "tubo" che porta la porta 27017 della VM sul tuo PC. La tua applicazione crede che MongoDB sia sul tuo computer.
 
 > 📍 **Dove:** sul tuo PC (non sulla VM!). Apri un **nuovo** terminale PowerShell.
@@ -876,6 +880,8 @@ sudo ss -ltnp | grep 27017
 
 ✅ **Devi vedere due righe** in ascolto: una su `127.0.0.1:27017` e una sul tuo IP privato. I dati non vengono toccati.
 
+> **Dove si configura l'indirizzo?** Non in un file di configurazione di MongoDB (in questo setup non esiste un `mongod.conf`): dentro il container MongoDB ascolta su tutte le interfacce, ed è **Docker**, con la sezione `ports` del compose, a decidere su quali indirizzi della VM la porta è raggiungibile. Per controllare: `grep -A3 'ports:' docker-compose.yml` mostra cosa hai configurato, `sudo docker port mongo` cosa è attivo. Se l'IP privato compare nel file ma non in `docker port`, manca `sudo docker compose up -d`. L'IP scritto nel compose deve coincidere con quello della VM (`ip -4 addr show eth0`): se cambiasse, il container non partirebbe.
+
 **Passo 3 — Apri la porta nel firewall di Azure (NSG).**
 
 > 📍 Nel portale Azure, dal browser.
@@ -958,6 +964,8 @@ sudo sh -c 'du -sh /var/lib/docker/containers/*/*-json.log*'
 **Per cambiare i limiti:** modifica `max-size` e/o `max-file` nel compose, poi `sudo docker compose up -d`. Nota: ricreando il container, i log accumulati fino a quel momento vengono eliminati (i dati del database no).
 
 ### 12.2 Alternativa: conservare i log per un numero di giorni
+
+> 🧪 **Non ancora collaudato** su un'installazione reale: durante il collaudo è stata usata la configurazione predefinita della Parte 12.1.
 
 Se preferisci un limite in giorni (per esempio "tieni 30 giorni"), puoi mandare i log al *journal* di sistema.
 
@@ -1060,6 +1068,8 @@ sudo unattended-upgrade -v
 
 ### 13.2 Proteggere l'accesso SSH
 
+> 🧪 **Non ancora collaudato** su un'installazione reale: la creazione della chiave SSH e la disattivazione dell'accesso con password non sono ancora state eseguite. Segui con particolare attenzione la prova da un secondo terminale, per non restare chiuso fuori.
+
 L'obiettivo è che si possa entrare nella VM **solo con la chiave**, non con una password (le password possono essere indovinate da programmi automatici che provano milioni di combinazioni).
 
 **Controlla la situazione attuale:**
@@ -1081,7 +1091,26 @@ Se è già così, **non devi fare niente**.
 
 **Se `passwordauthentication` o `kbdinteractiveauthentication` sono `yes`:**
 
-> ⚠️ Prima di procedere, assicurati di entrare nella VM con una **chiave** (il file `.pem`) e non con una password. Altrimenti, con la modifica seguente, resteresti chiuso fuori.
+> ⚠️ Prima di procedere, assicurati di entrare nella VM con una **chiave** e non con una password. Altrimenti, con la modifica seguente, resteresti chiuso fuori.
+
+**Come capire se usi la password:** se `ssh` (o `scp`) ti chiede `azureuser@...'s password:`, stai usando la password. In quel caso crea prima una chiave SSH.
+
+**Creare una chiave SSH e installarla sulla VM** (📍 dal tuo PC, in PowerShell):
+
+```powershell
+# 1. Crea la coppia di chiavi: premi Invio per il percorso predefinito; puoi impostare una passphrase
+ssh-keygen -t ed25519
+
+# 2. Copia la chiave pubblica sulla VM (ti chiederà la password un'ultima volta)
+type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh azureuser@<IP_PUBBLICO_VM> "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+
+# 3. Prova: deve entrare SENZA chiedere la password
+ssh azureuser@<IP_PUBBLICO_VM>
+```
+
+La chiave privata (`id_ed25519`, senza estensione) resta sul PC nella cartella `C:\Users\<tuo-nome>\.ssh\` e non va mai condivisa; sulla VM finisce solo la parte pubblica (`.pub`). Essendo nella posizione predefinita, `ssh` e `scp` la usano automaticamente, senza bisogno di `-i`.
+
+Solo quando il passo 3 funziona senza password, procedi:
 
 ```bash
 sudo tee /etc/ssh/sshd_config.d/50-hardening.conf > /dev/null << 'EOF'
@@ -1151,6 +1180,7 @@ cat /sys/kernel/mm/transparent_hugepage/enabled
 | Riavviare MongoDB | `sudo docker compose restart` |
 | Applicare modifiche al `docker-compose.yml` | `sudo docker compose up -d` |
 | Aprire la shell del database come admin | `sudo docker exec -it mongo mongosh -u admin -p --authenticationDatabase admin` |
+| Vedere su quali indirizzi è raggiungibile MongoDB | `sudo docker port mongo` e `sudo ss -ltnp \| grep 27017` |
 | Fare un backup subito | `sudo /usr/local/bin/mongo-backup.sh` |
 | Vedere l'esito dei backup notturni | `sudo journalctl -u mongo-backup.service -n 20 --no-pager` |
 | Vedere lo spazio libero su disco | `df -h /` |

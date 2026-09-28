@@ -198,6 +198,8 @@ sudo chmod 700 /usr/local/bin/mongo-backup.sh
 sudo /usr/local/bin/mongo-backup.sh
 ```
 
+🧪 Retention settimanale/mensile non ancora osservata su un periodo reale (collaudati backup, timer e ripristino).
+
 **Timer systemd** (02:30 UTC; `Persistent=true` recupera le esecuzioni perse a VM spenta):
 
 ```bash
@@ -249,6 +251,8 @@ Testare periodicamente: insert di prova → backup → drop → restore → veri
 
 ### 9.1 Tunnel SSH (consigliato)
 
+🧪 Non ancora collaudato (collaudo eseguito con l'accesso diretto, §9.2).
+
 Nessuna modifica lato VM, traffico cifrato. Dal PC:
 
 ```bash
@@ -294,7 +298,7 @@ sudo docker inspect mongo --format '{{json .HostConfig.LogConfig}}'
 sudo sh -c 'du -sh /var/lib/docker/containers/*/*-json.log*'
 ```
 
-**Alternativa a tempo (journald):** nel compose `logging: { driver: journald, options: { tag: mongo } }`, poi:
+**Alternativa a tempo (journald)** 🧪 non collaudata: nel compose `logging: { driver: journald, options: { tag: mongo } }`, poi:
 
 ```bash
 sudo mkdir -p /etc/systemd/journald.conf.d
@@ -311,6 +315,8 @@ sudo journalctl CONTAINER_NAME=mongo --since "2 days ago"
 `diagnostic.data` (FTDC) si autolimita a ~250 MB.
 
 ## 11. Hardening
+
+🧪 Chiave SSH e disattivazione dell'accesso con password non ancora collaudate: testare sempre da una seconda sessione.
 
 **Unattended upgrades** (Debian security + Docker, reboot automatico opzionale):
 
@@ -333,6 +339,14 @@ sudo unattended-upgrade --dry-run --debug 2>&1 | grep -E "Allowed origins|Packag
 ```
 
 Un upgrade di Docker riavvia il daemon (breve downtime). In produzione aggiornare Docker manualmente.
+
+**Chiave SSH** (se `ssh`/`scp` chiedono la password), dal PC:
+
+```powershell
+ssh-keygen -t ed25519
+type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh azureuser@<IP_PUBBLICO_VM> "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+ssh azureuser@<IP_PUBBLICO_VM>    # deve entrare senza password
+```
 
 **SSH** (solo chiave; tenere aperta la sessione corrente e testare da una seconda):
 
@@ -363,6 +377,7 @@ Da `~/mongodb`:
 | Backup manuale / esiti | `sudo /usr/local/bin/mongo-backup.sh` · `sudo journalctl -u mongo-backup.service -n 20` |
 | Aggiornare patch 8.0 | `sudo /usr/local/bin/mongo-backup.sh && sudo docker compose pull && sudo docker compose up -d` |
 | Versione | `sudo docker exec mongo mongod --version \| head -1` |
+| Indirizzi pubblicati (configurati in `ports`, non in MongoDB) | `sudo docker port mongo` · `sudo ss -ltnp \| grep 27017` |
 | Reboot necessario? | `ls /var/run/reboot-required` |
 
 - **Avvio al boot:** `docker` enabled + `restart: unless-stopped` (un container fermato manualmente resta fermo).

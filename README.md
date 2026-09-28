@@ -6,7 +6,7 @@ Documentazione e file di configurazione per installare **MongoDB 8.0** in un con
 
 Installare MongoDB su Debian 13 non è immediato: MongoDB non pubblica ancora pacchetti server ufficiali per questa versione, e molte guide in circolazione usano comandi ormai obsoleti (`apt-key`, repository di vecchie versioni di Debian, MongoDB 5.0 fuori supporto, la vecchia shell `mongo`).
 
-Questo progetto nasce per offrire un percorso **aggiornato, completo e verificato** che porti da una VM appena creata a un'istanza MongoDB pronta all'uso, senza fermarsi alla sola installazione: sicurezza, backup, accesso e manutenzione fanno parte del percorso fin dall'inizio.
+Questo progetto nasce per offrire un percorso **aggiornato, completo e verificato sul campo** che porti da una VM appena creata a un'istanza MongoDB pronta all'uso, senza fermarsi alla sola installazione: sicurezza, backup, accesso e manutenzione fanno parte del percorso fin dall'inizio.
 
 Il setup è pensato per ambienti di **sviluppo e test**, con una checklist dedicata ai passi necessari prima di portarlo in produzione.
 
@@ -89,9 +89,16 @@ Per utente applicativo, backup, accesso remoto e hardening segui la [guida rapid
 - L'accesso diretto sulla porta 27017 senza TLS è pensato **solo per lo sviluppo**, perché il traffico viaggia in chiaro: per cifrarlo segui le guide 01. Per la produzione consulta la checklist finale delle guide.
 - La chiave privata della CA (`ca.key`) e le chiavi del server non devono mai finire nel repository né restare senza protezione: le guide 01 spiegano come custodirle.
 
-## Versioni di riferimento
+## Versioni di riferimento e stato di verifica
 
 Testato con MongoDB 8.0.32, Docker Engine 29, Docker Compose 5 su Debian 13 (Azure).
+
+| Guida | Stato |
+|---|---|
+| 00 | Collaudata su un'installazione reale: installazione, utente applicativo, backup e ripristino, accesso diretto, log, aggiornamenti automatici. Non ancora collaudati (🧪): tunnel SSH, log con journald, chiave SSH e disattivazione delle password, retention settimanale/mensile su un periodo reale |
+| 01 (TLS) | Parti 2–9 collaudate su un'installazione reale. Rinnovo del certificato, rollback e script `genera-certificati-tls.sh` non ancora collaudati su VM (🧪) |
+
+Le parti non ancora collaudate sono segnalate nelle guide con il simbolo 🧪. Se le esegui, segnala eventuali differenze.
 
 ## Licenza
 
