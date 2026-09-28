@@ -6,15 +6,19 @@ Documentazione e file di configurazione per installare **MongoDB 8.0** in un con
 
 Installare MongoDB su Debian 13 non è immediato: MongoDB non pubblica ancora pacchetti server ufficiali per questa versione, e molte guide in circolazione usano comandi ormai obsoleti (`apt-key`, repository di vecchie versioni di Debian, MongoDB 5.0 fuori supporto, la vecchia shell `mongo`).
 
-Questo progetto nasce per offrire un percorso **aggiornato, completo e verificato** che porti da una VM appena creata a un'istanza MongoDB pronta all'uso, senza fermarsi alla sola installazione. Gli obiettivi sono:
-
-- **Sicurezza di default:** autenticazione sempre attiva, database non esposto su internet, password generate casualmente e mai scritte in chiaro nei comandi, utente applicativo con permessi limitati.
-- **Dati protetti:** backup automatici con retention su più livelli e una procedura di ripristino testata, non solo descritta.
-- **Riproducibilità:** gli stessi comandi e file di configurazione portano sempre allo stesso risultato, e i file in `config/` si possono copiare così come sono.
-- **Accessibilità:** una guida completa per chi parte da zero, che spiega il perché di ogni passaggio, e una guida rapida per chi vuole solo i comandi.
-- **Esperienza reale:** gli errori incontrati durante l'installazione effettiva, e la loro soluzione, sono raccolti nelle sezioni di risoluzione dei problemi.
+Questo progetto nasce per offrire un percorso **aggiornato, completo e verificato** che porti da una VM appena creata a un'istanza MongoDB pronta all'uso, senza fermarsi alla sola installazione: sicurezza, backup, accesso e manutenzione fanno parte del percorso fin dall'inizio.
 
 Il setup è pensato per ambienti di **sviluppo e test**, con una checklist dedicata ai passi necessari prima di portarlo in produzione.
+
+## Obiettivi
+
+1. **Sicurezza di default.** Autenticazione sempre attiva, database non esposto su internet, password generate casualmente e mai scritte in chiaro nei comandi, utente applicativo con permessi limitati al proprio database.
+2. **Dati protetti.** Backup automatici con retention su più livelli (giornaliera, settimanale, mensile) e una procedura di ripristino testata, non solo descritta.
+3. **Riproducibilità.** Gli stessi comandi e file di configurazione portano sempre allo stesso risultato; i file in `config/` si possono copiare sulla VM così come sono.
+4. **Manutenzione semplice.** Avvio automatico, aggiornamenti di sicurezza automatici, log con dimensione limitata, aggiornamento di MongoDB con pochi comandi.
+5. **Accessibilità.** Una guida completa per chi parte da zero, che spiega il perché di ogni passaggio, e una guida rapida per chi vuole solo i comandi.
+6. **Scelte motivate.** Ogni decisione tecnica (Docker, porte, permessi, retention) è spiegata, così è possibile adattarla consapevolmente al proprio contesto.
+7. **Esperienza reale.** Gli errori incontrati durante un'installazione effettiva, e la loro soluzione, sono raccolti nelle sezioni di risoluzione dei problemi.
 
 ## Cosa comprende
 
