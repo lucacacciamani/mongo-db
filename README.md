@@ -48,16 +48,21 @@ La guida 01 presuppone di aver completato la 00.
 │   ├── 01-tls-guida-completa.md
 │   └── 01-tls-guida-rapida.md
 └── config/
-    ├── docker-compose.yml          → ~/mongodb/docker-compose.yml (senza TLS)
-    ├── docker-compose-tls.yml      → ~/mongodb/docker-compose.yml (con TLS)
-    ├── genera-certificati-tls.sh   → ~/mongodb/tls/ (crea o rinnova i certificati)
-    ├── mongo-backup.sh             → /usr/local/bin/mongo-backup.sh
-    ├── mongo-backup.service        → /etc/systemd/system/mongo-backup.service
-    ├── mongo-backup.timer          → /etc/systemd/system/mongo-backup.timer
-    └── mongodb-thp.conf            → /etc/tmpfiles.d/mongodb-thp.conf
+    ├── 00-base/                      Risorse della guida 00 (senza TLS)
+    │   ├── docker-compose.yml        → ~/mongodb/docker-compose.yml
+    │   ├── mongo-backup.sh           → /usr/local/bin/mongo-backup.sh
+    │   ├── mongo-backup.service      → /etc/systemd/system/mongo-backup.service
+    │   ├── mongo-backup.timer        → /etc/systemd/system/mongo-backup.timer
+    │   └── mongodb-thp.conf          → /etc/tmpfiles.d/mongodb-thp.conf
+    └── 01-tls/                       Risorse della guida 01 (con TLS)
+        ├── docker-compose.yml        → ~/mongodb/docker-compose.yml (sostituisce quello della 00)
+        ├── mongo-backup.sh           → /usr/local/bin/mongo-backup.sh (sostituisce quello della 00)
+        └── genera-certificati-tls.sh → ~/mongodb/tls/ (crea o rinnova i certificati)
 ```
 
-I file in `config/` sono gli stessi riportati nelle guide, pronti da copiare sulla VM nei percorsi indicati. Lo script di backup funziona sia con sia senza TLS: rileva da solo la configurazione attiva.
+Ogni guida ha la propria cartella di risorse, con gli stessi file riportati nel testo, pronti da copiare sulla VM nei percorsi indicati. La guida 01 contiene solo i file che cambiano rispetto alla 00: timer, servizio systemd e impostazioni del kernel restano quelli di `00-base`.
+
+Lo script di backup esiste in due versioni: quella di `00-base` si collega senza TLS; quella di `01-tls` rileva da sola se il TLS è attivo e funziona in entrambi i casi, anche dopo un eventuale rollback. Attivando il TLS va quindi installata la versione `01-tls`, altrimenti i backup smettono di funzionare.
 
 ## Requisiti
 
@@ -71,7 +76,7 @@ Dopo aver installato Docker e configurato le Transparent Huge Pages (vedi la gui
 
 ```bash
 mkdir -p ~/mongodb && cd ~/mongodb
-# copia qui config/docker-compose.yml
+# copia qui config/00-base/docker-compose.yml
 
 openssl rand -base64 24 | tr -d '/+=' | sudo tee mongo_root_password.txt > /dev/null
 sudo chown 999:999 mongo_root_password.txt && sudo chmod 600 mongo_root_password.txt
