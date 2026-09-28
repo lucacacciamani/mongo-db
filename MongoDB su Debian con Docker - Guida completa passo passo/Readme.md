@@ -43,7 +43,7 @@
 
 Capire queste poche parole ti eviterà la maggior parte degli errori.
 
-**Macchina virtuale (VM).** Un computer "finto" che gira nei data center di Microsoft Azure. Si comporta come un vero server Linux: ci entri da remoto e lanci comandi. In questa guida la VM si chiama `azmdb01`.
+**Macchina virtuale (VM).** Un computer "finto" che gira nei data center di Microsoft Azure. Si comporta come un vero server Linux: ci entri da remoto e lanci comandi. In questa guida la VM si chiama `mongo-vm`.
 
 **Terminale.** La finestra dove scrivi comandi testuali invece di cliccare. Sul tuo PC Windows è *PowerShell* o *Terminale Windows*; sulla VM è la *shell* Linux (chiamata *bash*).
 
@@ -52,10 +52,10 @@ Capire queste poche parole ti eviterà la maggior parte degli errori.
 **Prompt.** La scritta che compare prima del cursore, per esempio:
 
 ```
-azureuser@azmdb01:~/mongodb$
+azureuser@mongo-vm:~/mongodb$
 ```
 
-Ti dice **chi sei** (`azureuser`), **dove sei** (`azmdb01`, cioè la VM) e **in quale cartella** (`~/mongodb`, dove `~` significa "la tua cartella personale"). Guardalo sempre: è il modo più semplice per capire se stai lavorando sulla VM o sul tuo PC.
+Ti dice **chi sei** (`azureuser`), **dove sei** (`mongo-vm`, cioè la VM) e **in quale cartella** (`~/mongodb`, dove `~` significa "la tua cartella personale"). Guardalo sempre: è il modo più semplice per capire se stai lavorando sulla VM o sul tuo PC.
 
 **sudo.** Messo davanti a un comando, lo esegue con i permessi di amministratore (come "Esegui come amministratore" in Windows). La prima volta può chiederti la password del tuo utente.
 
@@ -128,7 +128,7 @@ Esempio: `ssh azureuser@<IP_PUBBLICO_VM>` diventa `ssh azureuser@20.123.45.67`.
 | Segnaposto | Cosa inserire | Dove trovarlo |
 |---|---|---|
 | `<IP_PUBBLICO_VM>` | Indirizzo pubblico della VM | Portale Azure → la tua VM → *Panoramica* → *Indirizzo IP pubblico* |
-| `<IP_PRIVATO_VM>` | Indirizzo interno della VM (es. `172.16.0.4`) | Comando nella Parte 11.2 |
+| `<IP_PRIVATO_VM>` | Indirizzo interno della VM (es. `10.0.0.4`) | Comando nella Parte 11.2 |
 | `<IL_TUO_IP>` | Indirizzo pubblico del tuo PC/ufficio | Cerca "what is my ip" nel browser del tuo PC |
 
 In questa guida l'utente della VM è `azureuser`: se il tuo è diverso, sostituiscilo.
@@ -169,7 +169,7 @@ ssh -i C:\percorso\della\chiave.pem azureuser@<IP_PUBBLICO_VM>
 ```
 
 - La prima volta ti chiede di confermare l'identità del server: scrivi `yes` e premi Invio.
-- Se tutto va bene, il prompt cambia in `azureuser@azmdb01:~$`: **ora sei sulla VM**.
+- Se tutto va bene, il prompt cambia in `azureuser@mongo-vm:~$`: **ora sei sulla VM**.
 
 Se il collegamento non riesce, vedi la [Parte 15](#parte-15--quando-qualcosa-va-storto), voce "Non riesco a collegarmi con SSH".
 
@@ -181,7 +181,7 @@ Scrivi `exit` e premi Invio: torni al terminale del tuo PC.
 
 ## Parte 3 — Controlli preliminari
 
-> 📍 **Dove:** sulla VM (prompt `azureuser@azmdb01`).
+> 📍 **Dove:** sulla VM (prompt `azureuser@mongo-vm`).
 
 ### 3.1 La CPU supporta MongoDB 8.0?
 
@@ -311,7 +311,7 @@ mkdir -p ~/mongodb
 cd ~/mongodb
 ```
 
-✅ Il prompt diventa `azureuser@azmdb01:~/mongodb$`.
+✅ Il prompt diventa `azureuser@mongo-vm:~/mongodb$`.
 
 > ⚠️ **Da qui in avanti, i comandi `docker compose` funzionano solo se sei dentro questa cartella.** Se chiudi e riapri la sessione, ricordati di rientrarci con `cd ~/mongodb`.
 
@@ -841,7 +841,7 @@ ssh -N mongo-azure
 ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1
 ```
 
-✅ Vedrai un indirizzo privato, per esempio `172.16.0.4` o `10.0.0.4`. Annotalo.
+✅ Vedrai un indirizzo privato, per esempio `10.0.0.4`. Annotalo.
 
 **Passo 2 — Pubblica MongoDB anche su quell'indirizzo.**
 
@@ -852,12 +852,12 @@ cd ~/mongodb
 nano docker-compose.yml
 ```
 
-Nella sezione `ports`, sotto la riga esistente, aggiungi la seconda riga con il tuo IP privato, rispettando gli stessi spazi:
+Nella sezione `ports`, sotto la riga esistente, aggiungi la seconda riga con il tuo IP privato (qui `10.0.0.4` è un esempio), rispettando gli stessi spazi:
 
 ```yaml
     ports:
       - "127.0.0.1:27017:27017"
-      - "172.16.0.4:27017:27017"
+      - "10.0.0.4:27017:27017"
 ```
 
 Salva con **Ctrl+O** poi **Invio**, esci con **Ctrl+X**.
