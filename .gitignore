@@ -1,0 +1,21 @@
+# Segreti: non devono mai finire nel repository
+*_password.txt
+*.pem
+*.key
+.env
+.env.*
+
+# Backup e dump
+*.archive
+*.archive.gz
+*.gz
+dump/
+
+# File di sistema / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*.bak
