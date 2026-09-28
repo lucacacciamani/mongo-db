@@ -589,9 +589,7 @@ FILE="$DEST/daily/mongo-$(date +%Y%m%d-%H%M%S).archive.gz"
 docker exec -i mongo sh -c '
   umask 077
   printf "password: %s\n" "$(cat /run/secrets/mongo_root_password)" > /tmp/dump.yaml
-  TLS=""
-  [ -f /etc/mongo/tls/ca.pem ] && TLS="--ssl --sslCAFile=/etc/mongo/tls/ca.pem"
-  mongodump $TLS --config=/tmp/dump.yaml -u admin --authenticationDatabase admin --archive --gzip --quiet
+  mongodump --config=/tmp/dump.yaml -u admin --authenticationDatabase admin --archive --gzip --quiet
   status=$?
   rm -f /tmp/dump.yaml
   exit $status
@@ -618,7 +616,7 @@ sudo head -3 /usr/local/bin/mongo-backup.sh
 
 1. si ferma subito alla prima cosa che va storta (`set -euo pipefail`), così non cancella mai i vecchi backup se il nuovo non è riuscito;
 2. fa in modo che i file creati siano leggibili solo dall'amministratore (`umask 077`);
-3. chiede a MongoDB, dentro il container, di esportare tutti i dati in un unico file compresso (`mongodump`); la password viene passata tramite un file temporaneo, così non è visibile ad altri programmi; se il TLS è attivo (guida `01-tls-guida-completa.md`) usa automaticamente la connessione cifrata;
+3. chiede a MongoDB, dentro il container, di esportare tutti i dati in un unico file compresso (`mongodump`); la password viene passata tramite un file temporaneo, così non è visibile ad altri programmi;
 4. se è domenica, "copia" il backup nella cartella `weekly`; se è il primo del mese, in `monthly`;
 5. cancella i backup più vecchi del periodo di conservazione;
 6. scrive un messaggio di conferma con la dimensione del file.
@@ -640,6 +638,8 @@ sudo ls -lhR /var/backups/mongodb
 ✅ **Devi vedere:** `Backup completato: /var/backups/mongodb/daily/mongo-AAAAMMGG-HHMMSS.archive.gz` e, nell'elenco, il file con permessi `-rw-------`.
 
 Con un database quasi vuoto il file pesa solo 1–4 KB: è normale.
+
+> **Se attiverai il TLS** (guida `01-tls-guida-completa.md`), questo script non riuscirà più a collegarsi: andrà sostituito con la versione della guida 01, che funziona sia con sia senza TLS.
 
 ### 9.4 Programmare il backup ogni notte
 

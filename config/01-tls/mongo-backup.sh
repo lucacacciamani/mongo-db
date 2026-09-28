@@ -1,0 +1,36 @@
+#!/bin/bash
+# Backup MongoDB con retention giornaliera/settimanale/mensile
+# Versione per la guida 01: rileva da sola il TLS (presenza di /etc/mongo/tls/ca.pem nel container),
+# quindi funziona sia con sia senza TLS (utile anche dopo un rollback).
+# Installazione: /usr/local/bin/mongo-backup.sh (chmod 700) - vedi docs/01-tls-guida-completa.md, Parte 8
+set -euo pipefail
+umask 077
+
+DEST=/var/backups/mongodb
+KEEP_DAILY=7      # giorni
+KEEP_WEEKLY=4     # settimane
+KEEP_MONTHLY=12   # mesi
+
+mkdir -p "$DEST/daily" "$DEST/weekly" "$DEST/monthly"
+FILE="$DEST/daily/mongo-$(date +%Y%m%d-%H%M%S).archive.gz"
+
+docker exec -i mongo sh -c '
+  umask 077
+  printf "password: %s\n" "$(cat /run/secrets/mongo_root_password)" > /tmp/dump.yaml
+  TLS=""
+  [ -f /etc/mongo/tls/ca.pem ] && TLS="--ssl --sslCAFile=/etc/mongo/tls/ca.pem"
+  mongodump $TLS --config=/tmp/dump.yaml -u admin --authenticationDatabase admin --archive --gzip --quiet
+  status=$?
+  rm -f /tmp/dump.yaml
+  exit $status
+' > "$FILE.tmp"
+mv "$FILE.tmp" "$FILE"
+
+[ "$(date +%u)" = "7" ]  && ln -f "$FILE" "$DEST/weekly/"
+[ "$(date +%d)" = "01" ] && ln -f "$FILE" "$DEST/monthly/"
+
+find "$DEST/daily"   -name 'mongo-*.archive.gz' -mtime +$((KEEP_DAILY - 1))        -delete
+find "$DEST/weekly"  -name 'mongo-*.archive.gz' -mtime +$((KEEP_WEEKLY * 7 - 1))  -delete
+find "$DEST/monthly" -name 'mongo-*.archive.gz' -mtime +$((KEEP_MONTHLY * 31 - 1)) -delete
+
+echo "Backup completato: $FILE ($(du -h "$FILE" | cut -f1))"

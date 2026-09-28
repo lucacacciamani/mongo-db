@@ -155,7 +155,7 @@ sudo docker exec -it -e APP_PWD="$(sudo cat ~/mongodb/appuser_password.txt)" mon
 
 ## 7. Backup
 
-Dump compresso notturno; retention 7 giornalieri / 4 settimanali (domenica) / 12 mensili (giorno 1) tramite hard link. Password via file temporaneo (non visibile in `ps`); con `set -e` la pulizia non avviene se il dump fallisce. Se il TLS è attivo (guida 01) lo script lo rileva e usa la connessione cifrata.
+Dump compresso notturno; retention 7 giornalieri / 4 settimanali (domenica) / 12 mensili (giorno 1) tramite hard link. Password via file temporaneo (non visibile in `ps`); con `set -e` la pulizia non avviene se il dump fallisce. Con il TLS attivo va sostituito dalla versione della guida 01 (`config/01-tls/mongo-backup.sh`).
 
 ```bash
 sudo mkdir -p /var/backups/mongodb && sudo chmod 700 /var/backups/mongodb
@@ -176,9 +176,7 @@ FILE="$DEST/daily/mongo-$(date +%Y%m%d-%H%M%S).archive.gz"
 docker exec -i mongo sh -c '
   umask 077
   printf "password: %s\n" "$(cat /run/secrets/mongo_root_password)" > /tmp/dump.yaml
-  TLS=""
-  [ -f /etc/mongo/tls/ca.pem ] && TLS="--ssl --sslCAFile=/etc/mongo/tls/ca.pem"
-  mongodump $TLS --config=/tmp/dump.yaml -u admin --authenticationDatabase admin --archive --gzip --quiet
+  mongodump --config=/tmp/dump.yaml -u admin --authenticationDatabase admin --archive --gzip --quiet
   status=$?
   rm -f /tmp/dump.yaml
   exit $status

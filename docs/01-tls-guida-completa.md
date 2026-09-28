@@ -142,7 +142,7 @@ cd ~/mongodb/tls
 
 ✅ Il prompt diventa `azureuser@mongo-vm:~/mongodb/tls$`.
 
-> **Scorciatoia:** le Parti 3 e 4 sono automatizzate dallo script `config/genera-certificati-tls.sh` del repository. Ti consigliamo di eseguirle a mano almeno la prima volta, per capire cosa succede; lo script è comodo soprattutto per i rinnovi.
+> **Scorciatoia:** le Parti 3 e 4 sono automatizzate dallo script `config/01-tls/genera-certificati-tls.sh` del repository. Ti consigliamo di eseguirle a mano almeno la prima volta, per capire cosa succede; lo script è comodo soprattutto per i rinnovi.
 
 ---
 
@@ -519,7 +519,7 @@ Con `requireTLS` anche `mongodump` e `mongorestore` devono usare il TLS: senza q
 
 ### 8.1 Il nuovo script di backup
 
-Questa versione riconosce da sola se il TLS è attivo (controlla se nel container esiste `/etc/mongo/tls/ca.pem`), quindi funziona sia con sia senza TLS. Incolla il blocco **intero**:
+Questa versione, disponibile anche nel repository come `config/01-tls/mongo-backup.sh`, riconosce da sola se il TLS è attivo (controlla se nel container esiste `/etc/mongo/tls/ca.pem`), quindi funziona sia con sia senza TLS: continua a funzionare anche dopo un rollback (Parte 11). Rispetto alla versione della guida 00 cambiano solo le tre righe con `TLS`. Incolla il blocco **intero**:
 
 ```bash
 sudo tee /usr/local/bin/mongo-backup.sh > /dev/null << 'EOF'
@@ -720,7 +720,7 @@ Il TLS protegge il traffico, **non** il database da chi prova a indovinare le pa
 
 ## Parte 10 — Rinnovare il certificato
 
-> 🧪 **Procedura non ancora collaudata.** Questa parte è stata scritta con cura ma, a differenza delle Parti 2–9, non è ancora stata eseguita su un'installazione reale. Anche lo script `config/genera-certificati-tls.sh` è stato provato solo in un ambiente di test (creazione e rinnovo del certificato), non su una VM con MongoDB in esecuzione. Se la esegui, fallo prima in un ambiente di sviluppo, tieni a portata di mano il rollback della Parte 11 e segnala eventuali differenze rispetto a quanto descritto.
+> 🧪 **Procedura non ancora collaudata.** Questa parte è stata scritta con cura ma, a differenza delle Parti 2–9, non è ancora stata eseguita su un'installazione reale. Anche lo script `config/01-tls/genera-certificati-tls.sh` è stato provato solo in un ambiente di test (creazione e rinnovo del certificato), non su una VM con MongoDB in esecuzione. Se la esegui, fallo prima in un ambiente di sviluppo, tieni a portata di mano il rollback della Parte 11 e segnala eventuali differenze rispetto a quanto descritto.
 
 Il certificato del server scade dopo 825 giorni. Scaduto quello, **nessun client riesce più a collegarsi**: conviene rinnovarlo con qualche settimana di anticipo.
 
@@ -773,7 +773,7 @@ Segna la data di scadenza in calendario, con un promemoria un mese prima.
 
 ✅ **I client non devono cambiare nulla:** il nuovo certificato è firmato dalla stessa CA, e il loro `ca.pem` resta valido.
 
-> In alternativa ai passi 2–3, lo script `config/genera-certificati-tls.sh` del repository riutilizza la CA esistente e rigenera solo il certificato del server.
+> In alternativa ai passi 2–3, lo script `config/01-tls/genera-certificati-tls.sh` del repository riutilizza la CA esistente e rigenera solo il certificato del server.
 
 ### 10.3 E quando scade la CA?
 

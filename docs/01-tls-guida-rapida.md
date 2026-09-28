@@ -20,7 +20,7 @@ L'IP pubblico deve essere **statico** (portale Azure → IP pubblico → Configu
 
 ## 2. CA e certificato del server
 
-Automatizzabile con `config/genera-certificati-tls.sh <IP_PUBBLICO> <IP_PRIVATO>`. Passi manuali:
+Automatizzabile con `config/01-tls/genera-certificati-tls.sh <IP_PUBBLICO> <IP_PRIVATO>`. Passi manuali:
 
 ```bash
 PUB_IP=<IP_PUBBLICO_VM>
@@ -148,7 +148,7 @@ Uscire da `mongosh` (`exit`) prima di lanciare il comando successivo: dentro il 
 
 ## 5. Backup e ripristino
 
-Lo script di backup va aggiornato, altrimenti con `requireTLS` i dump falliscono. La versione in `config/mongo-backup.sh` rileva da sola il TLS (presenza di `/etc/mongo/tls/ca.pem` nel container); la modifica rispetto alla guida 00 è nel blocco `docker exec`:
+Lo script di backup va aggiornato, altrimenti con `requireTLS` i dump falliscono. La versione `config/01-tls/mongo-backup.sh` rileva da sola il TLS (presenza di `/etc/mongo/tls/ca.pem` nel container), quindi funziona anche dopo un rollback; rispetto a `config/00-base/mongo-backup.sh` cambia solo il blocco `docker exec`:
 
 ```bash
   TLS=""
@@ -156,7 +156,7 @@ Lo script di backup va aggiornato, altrimenti con `requireTLS` i dump falliscono
   mongodump $TLS --config=/tmp/dump.yaml -u admin --authenticationDatabase admin --archive --gzip --quiet
 ```
 
-Installare lo script **intero** (da `sudo tee` a `sudo chmod`, vedi guida 00): le tre righe sopra eseguite da sole danno `mongodump: command not found`.
+Installare lo script **intero** (`config/01-tls/mongo-backup.sh`, oppure il blocco da `sudo tee` a `sudo chmod` della guida completa, Parte 8.1): le tre righe sopra eseguite da sole danno `mongodump: command not found`.
 
 ```bash
 sudo grep -n "TLS" /usr/local/bin/mongo-backup.sh     # 3 righe attese
@@ -228,7 +228,7 @@ cd ~/mongodb && sudo docker compose restart
 # 2. verificare (§4), ricopiare ca.srl sul PC; se la CA non deve restare sulla VM: shred -u ~/mongodb/tls/ca.key
 ```
 
-In alternativa: `config/genera-certificati-tls.sh` (riusa la CA esistente). Alla scadenza della CA (10 anni) serve una nuova CA e la ridistribuzione di `ca.pem`.
+In alternativa: `config/01-tls/genera-certificati-tls.sh` (riusa la CA esistente). Alla scadenza della CA (10 anni) serve una nuova CA e la ridistribuzione di `ca.pem`.
 
 ## 8. Troubleshooting
 
