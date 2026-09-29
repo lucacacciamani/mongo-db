@@ -16,6 +16,8 @@
 
 **Stato di verifica:** tutti i passaggi sono stati eseguiti e collaudati su un'installazione reale, tranne quelli segnati con 🧪 (cambio password, smantellamento del laboratorio, retention settimanale/mensile su un periodo reale).
 
+> 📖 **Comandi e simboli** (`sudo`, `chmod`, `|`, `<< EOF`, `docker compose`…): la [legenda dei comandi](legenda-comandi-linux.md) spiega tutto ciò che compare in questa guida.
+
 ---
 
 ## Indice

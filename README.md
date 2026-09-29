@@ -36,6 +36,8 @@ Le guide sono numerate nell'ordine in cui vanno seguite. Ogni argomento ha due v
 | 01 | Cifratura delle connessioni con TLS (CA privata, client, rinnovi) | [01-tls-guida-completa](docs/01-tls-guida-completa.md) | [01-tls-guida-rapida](docs/01-tls-guida-rapida.md) |
 | 02 | Replica set: costruzione, failover, accesso esterno, TLS a rotazione, backup con oplog, manutenzione | [02-replica-set-guida-completa](docs/02-replica-set-guida-completa.md) | [02-replica-set-guida-rapida](docs/02-replica-set-guida-rapida.md) |
 
+Per tutte le guide vale la **[legenda dei comandi](docs/legenda-comandi-linux.md)**: spiega ogni comando Linux, simbolo della shell, comando Docker, MongoDB e PowerShell usato nel progetto, con esempi presi dalle guide.
+
 La guida 01 presuppone di aver completato la 00; la 02 presuppone la 00 e la 01 (riusa la CA per il TLS). Gli [appunti di laboratorio della guida 02](docs/02-replica-set-appunti.md) raccolgono il diario delle prove, delle scelte e degli inconvenienti da cui è nata la guida.
 
 ## Struttura del repository
@@ -50,7 +52,8 @@ La guida 01 presuppone di aver completato la 00; la 02 presuppone la 00 e la 01 
 │   ├── 01-tls-guida-rapida.md
 │   ├── 02-replica-set-guida-completa.md
 │   ├── 02-replica-set-guida-rapida.md
-│   └── 02-replica-set-appunti.md     (diario del laboratorio)
+│   ├── 02-replica-set-appunti.md     (diario del laboratorio)
+│   └── legenda-comandi-linux.md      (legenda dei comandi, valida per tutte le guide)
 └── config/
     ├── 00-base/                      Risorse della guida 00 (senza TLS)
     │   ├── docker-compose.yml        → ~/mongodb/docker-compose.yml

@@ -13,6 +13,8 @@
 
 **Stato di verifica:** le Parti 2–9 sono state eseguite e collaudate su un'installazione reale. Le procedure di rinnovo del certificato (Parte 10) e di rollback (Parte 11) non sono ancora state collaudate: sono segnalate con il simbolo 🧪.
 
+> 📖 **Comandi e simboli** (`sudo`, `chmod`, `|`, `<< EOF`, `docker compose`…): la [legenda dei comandi](legenda-comandi-linux.md) spiega tutto ciò che compare in questa guida.
+
 ---
 
 ## Indice

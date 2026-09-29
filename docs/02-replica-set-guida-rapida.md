@@ -14,6 +14,8 @@ Replica set di 3 nodi in container sulla stessa VM (laboratorio), nomi DNS per l
 | `mongo-rs2` | 27102 | `<FQDN>:27102` |
 | `mongo-rs3` | 27103 | `<FQDN>:27103` |
 
+> 📖 **Comandi e simboli** (`sudo`, `chmod`, `|`, `<< EOF`, `docker compose`…): la [legenda dei comandi](legenda-comandi-linux.md) spiega tutto ciò che compare in questa guida.
+
 ---
 
 ## 1. Preparazione

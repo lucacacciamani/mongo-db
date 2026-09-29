@@ -12,6 +12,8 @@
 
 **Tempo stimato:** 1–2 ore, andando con calma.
 
+> 📖 **Comandi e simboli** (`sudo`, `chmod`, `|`, `<< EOF`, `docker compose`…): la [legenda dei comandi](legenda-comandi-linux.md) spiega tutto ciò che compare in questa guida.
+
 ---
 
 ## Indice

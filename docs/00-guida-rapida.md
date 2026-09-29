@@ -5,6 +5,8 @@ Setup di MongoDB 8.0 in container su VM Debian 13 (Azure): autenticazione, utent
 **Segnaposto:** `<IP_PUBBLICO_VM>`, `<IP_PRIVATO_VM>`, `<IL_TUO_IP>`. Database/utente d'esempio: `appdb` / `appuser`.
 **Nota:** MongoDB non ha pacchetti server ufficiali per trixie, da qui la scelta di Docker.
 
+> 📖 **Comandi e simboli** (`sudo`, `chmod`, `|`, `<< EOF`, `docker compose`…): la [legenda dei comandi](legenda-comandi-linux.md) spiega tutto ciò che compare in questa guida.
+
 ---
 
 ## 1. Prerequisiti

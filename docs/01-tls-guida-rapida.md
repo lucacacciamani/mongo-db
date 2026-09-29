@@ -6,6 +6,8 @@ Cifratura delle connessioni a MongoDB con una CA privata: traffico cifrato e ver
 **Stato di verifica:** §1–6 collaudati su installazione reale; rinnovo (§7) e rollback (§9) non ancora collaudati (🧪).
 **Alternativa:** per un singolo sviluppatore il tunnel SSH offre la stessa sicurezza senza certificati (guida 00, §9.1).
 
+> 📖 **Comandi e simboli** (`sudo`, `chmod`, `|`, `<< EOF`, `docker compose`…): la [legenda dei comandi](legenda-comandi-linux.md) spiega tutto ciò che compare in questa guida.
+
 ---
 
 ## 1. Preparazione
