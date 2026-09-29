@@ -1,0 +1,6 @@
+# Esempio per ~/mongo-lab/02-replica-set/tls/server.ext (sostituire i segnaposto).
+# clientAuth e' indispensabile: i nodi si collegano tra loro come client.
+basicConstraints=CA:FALSE
+keyUsage=digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth,clientAuth
+subjectAltName=DNS:<FQDN>,DNS:localhost,DNS:mongo-rs1,DNS:mongo-rs2,DNS:mongo-rs3,IP:127.0.0.1,IP:<IP_PRIVATO_VM>

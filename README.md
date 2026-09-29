@@ -22,7 +22,7 @@ Il setup è pensato per ambienti di **sviluppo e test**, con una checklist dedic
 
 ## Cosa comprende
 
-Autenticazione, utente applicativo con permessi limitati, backup automatici con retention giornaliera/settimanale/mensile, accesso dall'ambiente di sviluppo (tunnel SSH o accesso diretto), gestione dei log e hardening di base del sistema (aggiornamenti automatici, SSH solo con chiave). Una seconda parte copre la cifratura delle connessioni con **TLS**, tramite una CA privata.
+Autenticazione, utente applicativo con permessi limitati, backup automatici con retention giornaliera/settimanale/mensile, accesso dall'ambiente di sviluppo (tunnel SSH o accesso diretto), gestione dei log e hardening di base del sistema (aggiornamenti automatici, SSH solo con chiave). Una seconda parte copre la cifratura delle connessioni con **TLS**, tramite una CA privata, e una terza il **replica set**, costruito in laboratorio e accompagnato dallo scenario di produzione.
 
 > **Perché Docker?** L'immagine Docker ufficiale di MongoDB include tutte le dipendenze, quindi funziona su Debian 13 senza forzature, e rende semplici aggiornamenti e rimozione.
 
@@ -34,8 +34,9 @@ Le guide sono numerate nell'ordine in cui vanno seguite. Ogni argomento ha due v
 |---|---|---|---|
 | 00 | Installazione, sicurezza di base, utente applicativo, backup, accesso, manutenzione | [00-guida-completa](docs/00-guida-completa.md) | [00-guida-rapida](docs/00-guida-rapida.md) |
 | 01 | Cifratura delle connessioni con TLS (CA privata, client, rinnovi) | [01-tls-guida-completa](docs/01-tls-guida-completa.md) | [01-tls-guida-rapida](docs/01-tls-guida-rapida.md) |
+| 02 | Replica set: costruzione, failover, accesso esterno, TLS a rotazione, backup con oplog, manutenzione | [02-replica-set-guida-completa](docs/02-replica-set-guida-completa.md) | [02-replica-set-guida-rapida](docs/02-replica-set-guida-rapida.md) |
 
-La guida 01 presuppone di aver completato la 00.
+La guida 01 presuppone di aver completato la 00; la 02 presuppone la 00 e la 01 (riusa la CA per il TLS). Gli [appunti di laboratorio della guida 02](docs/02-replica-set-appunti.md) raccolgono il diario delle prove, delle scelte e degli inconvenienti da cui è nata la guida.
 
 ## Struttura del repository
 
@@ -46,7 +47,10 @@ La guida 01 presuppone di aver completato la 00.
 │   ├── 00-guida-completa.md
 │   ├── 00-guida-rapida.md
 │   ├── 01-tls-guida-completa.md
-│   └── 01-tls-guida-rapida.md
+│   ├── 01-tls-guida-rapida.md
+│   ├── 02-replica-set-guida-completa.md
+│   ├── 02-replica-set-guida-rapida.md
+│   └── 02-replica-set-appunti.md     (diario del laboratorio)
 └── config/
     ├── 00-base/                      Risorse della guida 00 (senza TLS)
     │   ├── docker-compose.yml        → ~/mongodb/docker-compose.yml
@@ -54,10 +58,17 @@ La guida 01 presuppone di aver completato la 00.
     │   ├── mongo-backup.service      → /etc/systemd/system/mongo-backup.service
     │   ├── mongo-backup.timer        → /etc/systemd/system/mongo-backup.timer
     │   └── mongodb-thp.conf          → /etc/tmpfiles.d/mongodb-thp.conf
-    └── 01-tls/                       Risorse della guida 01 (con TLS)
-        ├── docker-compose.yml        → ~/mongodb/docker-compose.yml (sostituisce quello della 00)
-        ├── mongo-backup.sh           → /usr/local/bin/mongo-backup.sh (sostituisce quello della 00)
-        └── genera-certificati-tls.sh → ~/mongodb/tls/ (crea o rinnova i certificati)
+    ├── 01-tls/                       Risorse della guida 01 (con TLS)
+    │   ├── docker-compose.yml        → ~/mongodb/docker-compose.yml (sostituisce quello della 00)
+    │   ├── mongo-backup.sh           → /usr/local/bin/mongo-backup.sh (sostituisce quello della 00)
+    │   └── genera-certificati-tls.sh → ~/mongodb/tls/ (crea o rinnova i certificati)
+    └── 02-replica-set/               Risorse della guida 02 (laboratorio replica set)
+        ├── docker-compose.yml        → ~/mongo-lab/02-replica-set/ (fase iniziale, senza TLS)
+        ├── docker-compose-tls.yml    → ~/mongo-lab/02-replica-set/docker-compose.yml (finale, con TLS)
+        ├── server.ext.example        → ~/mongo-lab/02-replica-set/tls/server.ext
+        ├── mongo-rs-backup.sh        → /usr/local/bin/mongo-rs-backup.sh (impostare LAB e FQDN)
+        ├── mongo-rs-backup.service   → /etc/systemd/system/
+        └── mongo-rs-backup.timer     → /etc/systemd/system/ (03:00 UTC)
 ```
 
 Ogni guida ha la propria cartella di risorse, con gli stessi file riportati nel testo, pronti da copiare sulla VM nei percorsi indicati. La guida 01 contiene solo i file che cambiano rispetto alla 00: timer, servizio systemd e impostazioni del kernel restano quelli di `00-base`.
@@ -101,7 +112,8 @@ Testato con MongoDB 8.0.32, Docker Engine 29, Docker Compose 5 su Debian 13 (Azu
 | Guida | Stato |
 |---|---|
 | 00 | Collaudata su un'installazione reale: installazione, utente applicativo, backup e ripristino, accesso diretto, log, aggiornamenti automatici. Non ancora collaudati (🧪): tunnel SSH, log con journald, chiave SSH e disattivazione delle password, retention settimanale/mensile su un periodo reale |
-| 01 (TLS) | Parti 2–9 collaudate su un'installazione reale. Rinnovo del certificato, rollback e script `genera-certificati-tls.sh` non ancora collaudati su VM (🧪) |
+| 01 (TLS) | Parti 2–9 collaudate su un'installazione reale, compresa l'esecuzione notturna del backup con TLS. Rinnovo del certificato, rollback e script `genera-certificati-tls.sh` non ancora collaudati su VM (🧪) |
+| 02 (replica set) | Collaudata su un'installazione reale (laboratorio con tre container su una VM). Non ancora collaudati (🧪): rollback del TLS, cambio password, smantellamento, retention settimanale/mensile su un periodo reale; opzioni avanzate (x.509, secondario nascosto, horizons) solo descritte |
 
 Le parti non ancora collaudate sono segnalate nelle guide con il simbolo 🧪. Se le esegui, segnala eventuali differenze.
 

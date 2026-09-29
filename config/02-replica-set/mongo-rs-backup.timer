@@ -1,0 +1,10 @@
+# Installazione: /etc/systemd/system/mongo-rs-backup.timer (orario UTC, dopo il backup di sviluppo delle 02:30)
+[Unit]
+Description=Backup notturno MongoDB replica set di laboratorio
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

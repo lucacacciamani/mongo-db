@@ -1,0 +1,72 @@
+# Replica set di laboratorio (guida 02), fase iniziale senza TLS.
+# Sostituire <FQDN> e <IP_PRIVATO_VM>. Sulla VM: ~/mongo-lab/02-replica-set/docker-compose.yml
+# Versione finale con TLS: docker-compose-tls.yml
+name: mongo-lab-rs
+
+x-mongo-common: &mongo-common
+  image: mongo:8.0
+  restart: unless-stopped
+  stop_grace_period: 1m
+  extra_hosts:
+    - "<FQDN>:<IP_PRIVATO_VM>"
+  mem_limit: 1g
+  ulimits:
+    nofile:
+      soft: 64000
+      hard: 64000
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "3"
+
+services:
+  mongo-rs1:
+    <<: *mongo-common
+    container_name: mongo-rs1
+    hostname: mongo-rs1
+    command: ["--replSet", "rs0", "--port", "27101", "--keyFile", "/etc/mongo/keyfile", "--wiredTigerCacheSizeGB", "0.25"]
+    ports:
+      - "127.0.0.1:27101:27101"
+      - "<IP_PRIVATO_VM>:27101:27101"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/rs_root_password
+    secrets:
+      - rs_root_password
+    volumes:
+      - rs1-data:/data/db
+      - ./keyfile:/etc/mongo/keyfile:ro
+
+  mongo-rs2:
+    <<: *mongo-common
+    container_name: mongo-rs2
+    hostname: mongo-rs2
+    command: ["--replSet", "rs0", "--port", "27102", "--keyFile", "/etc/mongo/keyfile", "--wiredTigerCacheSizeGB", "0.25"]
+    ports:
+      - "127.0.0.1:27102:27102"
+      - "<IP_PRIVATO_VM>:27102:27102"
+    volumes:
+      - rs2-data:/data/db
+      - ./keyfile:/etc/mongo/keyfile:ro
+
+  mongo-rs3:
+    <<: *mongo-common
+    container_name: mongo-rs3
+    hostname: mongo-rs3
+    command: ["--replSet", "rs0", "--port", "27103", "--keyFile", "/etc/mongo/keyfile", "--wiredTigerCacheSizeGB", "0.25"]
+    ports:
+      - "127.0.0.1:27103:27103"
+      - "<IP_PRIVATO_VM>:27103:27103"
+    volumes:
+      - rs3-data:/data/db
+      - ./keyfile:/etc/mongo/keyfile:ro
+
+volumes:
+  rs1-data:
+  rs2-data:
+  rs3-data:
+
+secrets:
+  rs_root_password:
+    file: ./root_password.txt

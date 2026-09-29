@@ -350,6 +350,7 @@ services:
     image: mongo:8.0
     container_name: mongo
     restart: unless-stopped
+    stop_grace_period: 1m
     ports:
       - "127.0.0.1:27017:27017"
     ulimits:
@@ -385,6 +386,7 @@ EOF
 | `image: mongo:8.0` | Usa l'immagine ufficiale di MongoDB, versione 8.0 (con l'ultima correzione disponibile) |
 | `container_name: mongo` | Il container si chiamerà `mongo` |
 | `restart: unless-stopped` | Se si ferma o la VM si riavvia, riparte da solo (tranne se l'hai fermato tu) |
+| `stop_grace_period: 1m` | Allo spegnimento, Docker aspetta fino a un minuto che MongoDB si chiuda da solo in modo ordinato, invece dei 10 secondi predefiniti dopo i quali lo terminerebbe forzatamente |
 | `ports: "127.0.0.1:27017:27017"` | MongoDB è raggiungibile sulla porta 27017, **ma solo dalla VM stessa** |
 | `ulimits` | Permette a MongoDB di aprire molti file contemporaneamente, come raccomandato |
 | `logging` | Limita lo spazio dei log: al massimo 5 file da 50 MB ciascuno |
@@ -643,7 +645,7 @@ Con un database quasi vuoto il file pesa solo 1–4 KB: è normale.
 
 ### 9.4 Programmare il backup ogni notte
 
-> Collaudati: backup manuale, esecuzione tramite systemd e ripristino. La creazione delle copie settimanali (domenica) e mensili (giorno 1) e la pulizia per scadenza non sono ancora state osservate su un periodo reale 🧪.
+> Collaudati: backup manuale, esecuzione tramite systemd, esecuzione notturna automatica (anche con il TLS della guida 01 attivo) e ripristino. La creazione delle copie settimanali (domenica) e mensili (giorno 1) e la pulizia per scadenza non sono ancora state osservate su un periodo reale 🧪.
 
 Usiamo i *timer* di systemd, il sistema che in Debian gestisce i servizi e le attività programmate. Servono due file: uno che dice **cosa** fare (`.service`) e uno che dice **quando** (`.timer`). Incolla tutto il blocco:
 

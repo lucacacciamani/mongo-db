@@ -66,6 +66,7 @@ services:
     image: mongo:8.0
     container_name: mongo
     restart: unless-stopped
+    stop_grace_period: 1m
     ports:
       - "127.0.0.1:27017:27017"
       # - "<IP_PRIVATO_VM>:27017:27017"   # accesso diretto, vedi §9.2
@@ -97,6 +98,7 @@ sudo docker compose config --quiet && echo "compose valido"
 ```
 
 - Porta solo su `127.0.0.1`: Docker scavalca ufw/iptables, mai `0.0.0.0`.
+- `stop_grace_period: 1m`: Docker di default termina il container dopo 10 s; MongoDB può impiegare di più a chiudersi in modo ordinato (in un replica set fino a ~15 s), e un'interruzione forzata comporta un recupero al riavvio.
 - `MONGO_INITDB_*` vengono letti **solo al primo avvio** con volume vuoto.
 - Log limitati a 5 × 50 MB.
 
@@ -196,7 +198,7 @@ sudo chmod 700 /usr/local/bin/mongo-backup.sh
 sudo /usr/local/bin/mongo-backup.sh
 ```
 
-🧪 Retention settimanale/mensile non ancora osservata su un periodo reale (collaudati backup, timer e ripristino).
+🧪 Retention settimanale/mensile non ancora osservata su un periodo reale (collaudati backup, timer, esecuzione notturna e ripristino).
 
 **Timer systemd** (02:30 UTC; `Persistent=true` recupera le esecuzioni perse a VM spenta):
 
