@@ -10,6 +10,13 @@ Cifratura delle connessioni a MongoDB con una CA privata: traffico cifrato e ver
 
 ---
 
+```mermaid
+flowchart LR
+    CAKEY["ca.key"] -- "firma" --> CRT["server.crt"] --> PEM["server.pem<br/>+ server.key"] --> M["MongoDB<br/>requireTLS"]
+    CAPEM["ca.pem"] --> C["Client<br/>tls=true, tlsCAFile"]
+    C -- "verifica" --> M
+```
+
 ## 1. Preparazione
 
 ```bash

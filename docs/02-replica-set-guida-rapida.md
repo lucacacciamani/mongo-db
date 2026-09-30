@@ -16,6 +16,15 @@ Replica set di 3 nodi in container sulla stessa VM (laboratorio), nomi DNS per l
 
 > 📖 **Comandi e simboli** (`sudo`, `chmod`, `|`, `<< EOF`, `docker compose`…): la [legenda dei comandi](legenda-comandi-linux.md) spiega tutto ciò che compare in questa guida.
 
+```mermaid
+flowchart LR
+    PC["VS Code"] -- "FQDN:27101-27103<br/>TLS" --> RS
+    subgraph RS["Replica set rs0, una VM"]
+        N1["mongo-rs1<br/>priority 2"] -- "oplog" --> N2["mongo-rs2"]
+        N1 -- "oplog" --> N3["mongo-rs3"]
+    end
+```
+
 ---
 
 ## 1. Preparazione

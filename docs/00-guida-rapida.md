@@ -9,6 +9,15 @@ Setup di MongoDB 8.0 in container su VM Debian 13 (Azure): autenticazione, utent
 
 ---
 
+```mermaid
+flowchart LR
+    PC["PC"] -- "SSH 22 / 27017" --> NSG["NSG Azure"] --> VM
+    subgraph VM["VM Debian 13"]
+        MG["Container mongo"] --- VOL[("Volume dati")]
+        TM["Timer 02:30"] -- "mongodump" --> BK[("Backup locali")]
+    end
+```
+
 ## 1. Prerequisiti
 
 ```bash

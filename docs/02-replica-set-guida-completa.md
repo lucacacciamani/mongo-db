@@ -60,6 +60,16 @@ Un **replica set** è un gruppo di server MongoDB, di solito tre, che contengono
 
 Se il primario si guasta, gli altri se ne accorgono ed **eleggono un nuovo primario** tra i secondari, di solito in pochi secondi: è il **failover** automatico. Quando il vecchio primario torna, rientra come secondario e si rimette in pari.
 
+```mermaid
+flowchart TD
+    APP["Applicazione<br/>stringa con replicaSet=rs0"] -- "letture e scritture" --> P["Primario"]
+    P -- "oplog" --> S1["Secondario 1"]
+    P -- "oplog" --> S2["Secondario 2"]
+    P -. "heartbeat" .- S1
+    P -. "heartbeat" .- S2
+    S1 -. "heartbeat" .- S2
+```
+
 ### 0.2 Maggioranza e numero dispari
 
 Per eleggere un primario serve la **maggioranza** dei membri con diritto di voto. Con tre nodi ne bastano due: il sistema sopravvive alla perdita di uno qualunque.
@@ -503,6 +513,25 @@ rs_eval 'db.getSiblingDB("labdb").prova.insertOne({ msg: "scrittura sul secondar
 
 ## Parte 6 — Il failover
 
+Cosa succede, passo per passo, quando il primario si spegne in modo ordinato:
+
+```mermaid
+sequenceDiagram
+    participant A as Applicazione / driver
+    participant N1 as mongo-rs1 (primario)
+    participant N2 as mongo-rs2
+    participant N3 as mongo-rs3
+    Note over N1: docker compose stop
+    N1->>N1: cede il ruolo, quiesce fino a ~15 s
+    N2->>N3: elezione: voto
+    N3-->>N2: voto concesso (maggioranza 2 su 3)
+    Note over N2: nuovo PRIMARY
+    A->>N2: il driver trova il nuovo primario, scrive
+    Note over N1: docker compose start
+    N1->>N2: rientra come SECONDARY, recupera l'oplog
+    Note over N1: priority 2: riprende il ruolo di PRIMARY
+```
+
 > ⚠️ Controlla che il prompt mostri `~/mongo-lab/02-replica-set`: il comando seguente, in `~/mongodb`, fermerebbe il database di sviluppo.
 
 ### 6.1 Spegnere il primario
@@ -518,6 +547,30 @@ rs_eval 'rs.status().members.forEach(m => print(m.name, m.stateStr))' 2
 ```
 
 ✅ **Atteso:** `<FQDN>:27101 (not reachable/healthy)` e uno tra i nodi 2 e 3 diventato **PRIMARY**. I due nodi rimasti sono la maggioranza, quindi hanno potuto eleggerne uno.
+
+<details>
+<summary>📋 Output reale del collaudo (primo failover, con i membri registrati con i nomi dei container)</summary>
+
+```
+$ sudo docker compose stop mongo-rs1
+ ✔ Container mongo-rs1 Stopped                                   11.0s   <- prima di stop_grace_period (Parte 6.3)
+
+$ rs_eval 'rs.status().members.forEach(m => print(m.name, m.stateStr))' 2
+mongo-rs1:27101 SECONDARY          <- ha già ceduto il ruolo ed è in quiesce
+mongo-rs2:27102 PRIMARY
+mongo-rs3:27103 SECONDARY
+
+$ rs_eval 'rs.status().members.forEach(m => print(m.name, m.stateStr))' 2
+mongo-rs1:27101 (not reachable/healthy)
+mongo-rs2:27102 PRIMARY
+mongo-rs3:27103 SECONDARY
+
+# Stessa stringa di connessione, nuovo primario trovato dal driver:
+Primario trovato dal driver: mongo-rs2:27102
+{ acknowledged: true, insertedId: ObjectId('6abb9e00b55e465977359d42') }
+```
+
+</details>
 
 **L'applicazione se ne accorge?** Stessa stringa di prima, lanciata dal nodo 2:
 
@@ -565,6 +618,21 @@ sudo docker compose logs mongo-rs1 | grep -o '"Startup from clean shutdown?":[a-
 
 ✅ `"Startup from clean shutdown?":true`. Lo stop del primario dura circa 16 secondi.
 
+<details>
+<summary>📋 Output reale del collaudo: senza e con stop_grace_period</summary>
+
+```
+# Senza stop_grace_period (Docker termina dopo 10 s):
+ ✔ Container mongo-rs1 Stopped                                   11.0s
+"Startup from clean shutdown?":false
+
+# Con stop_grace_period: 1m:
+ ✔ Container mongo-rs1 Stopped                                   15.9s
+"Startup from clean shutdown?":true
+```
+
+</details>
+
 > 🧭 **Scelta — `stop_grace_period: 1m`**
 >
 > **Perché:** Docker, per impostazione predefinita, aspetta solo **10 secondi** e poi termina il container d'autorità.
@@ -604,6 +672,18 @@ Il nome `<FQDN>` è lo stesso per tutti, ma si risolve in modo diverso a seconda
 - **dentro i container:** `extra_hosts` lo fa puntare direttamente all'**IP privato**, così i nodi si parlano restando dentro la VM.
 
 Client e nodi usano gli stessi nomi, esattamente come in produzione con un DNS aziendale. Per questo, nella Parte 3, abbiamo pubblicato le porte anche sull'IP privato.
+
+```mermaid
+flowchart LR
+    subgraph PCS["Dal tuo PC"]
+        PC["VS Code"] -- "DNS pubblico" --> PUB["IP pubblico"]
+    end
+    PUB -- "NSG: 27101-27103<br/>solo il tuo IP" --> PRIV
+    subgraph VMS["Sulla VM"]
+        PRIV["IP privato:2710x"] -- "porta pubblicata" --> NODE["Nodo mongo-rs x"]
+        NODE2["Nodo del replica set"] -- "extra_hosts:<br/>FQDN = IP privato" --> PRIV
+    end
+```
 
 ### 7.3 La regola NSG
 
@@ -666,6 +746,21 @@ Lo faremo **senza mai fermare il replica set**, passando per tre modalità:
 | `requireTLS` | solo cifrato | cifrato |
 
 Le fasi: certificato → riavvio a rotazione in `allowTLS` → passaggio a caldo a `preferTLS` e spostamento dei client → passaggio a caldo a `requireTLS` → configurazione resa permanente.
+
+```mermaid
+stateDiagram-v2
+    [*] --> SenzaTLS
+    SenzaTLS --> allowTLS: compose + riavvio a rotazione
+    allowTLS --> preferTLS: setParameter a caldo
+    preferTLS --> preferTLS: spostamento dei client su tls=true
+    preferTLS --> requireTLS: setParameter a caldo
+    requireTLS --> Permanente: compose requireTLS + riavvio a rotazione
+    Permanente --> [*]
+    note right of preferTLS
+        accetta ancora client in chiaro:
+        finestra per migrarli
+    end note
+```
 
 ### 8.2 Il certificato dei nodi
 
@@ -808,6 +903,17 @@ for n in 1 2 3; do rs_eval 'printjson(db.serverStatus().transportSecurity)' $n; 
 
 ✅ Su ogni nodo `'1.3'` maggiore di zero (nel collaudo: 18–21) e zero per le versioni più vecchie.
 
+<details>
+<summary>📋 Output reale del collaudo</summary>
+
+```
+{ '1.0': Long('0'), '1.1': Long('0'), '1.2': Long('0'), '1.3': Long('19'), unknown: Long('0') }
+{ '1.0': Long('0'), '1.1': Long('0'), '1.2': Long('0'), '1.3': Long('18'), unknown: Long('0') }
+{ '1.0': Long('0'), '1.1': Long('0'), '1.2': Long('0'), '1.3': Long('21'), unknown: Long('0') }
+```
+
+</details>
+
 **Aggiorna `rs_eval`** perché usi il TLS:
 
 ```bash
@@ -847,6 +953,20 @@ sudo docker exec mongo-rs2 mongosh --port 27102 --quiet --eval 'db.runCommand({ 
 ```
 
 ✅ **Deve fallire** con `MongoServerSelectionError: connection ... closed`. Anche la vecchia connessione di VS Code senza TLS smette di funzionare: puoi eliminarla.
+
+<details>
+<summary>📋 Output reale del collaudo</summary>
+
+```
+$ for n in 1 2 3; do rs_eval 'print(db.adminCommand({ getParameter: 1, tlsMode: 1 }).tlsMode)' $n; done
+requireTLS
+requireTLS
+requireTLS
+$ sudo docker exec mongo-rs2 mongosh --port 27102 --quiet --eval 'db.runCommand({ ping: 1 })'
+MongoServerSelectionError: connection <monitor> to 127.0.0.1:27102 closed
+```
+
+</details>
 
 **Rendere la modalità permanente** con un'ultima rotazione:
 
@@ -1105,6 +1225,21 @@ rs_eval 'printjson(db.getSiblingDB("labdb").prova.find({}, { _id: 0, msg: 1 }).t
 
 ✅ `document(s) restored successfully` e il documento di nuovo al suo posto.
 
+<details>
+<summary>📋 Output reale del collaudo</summary>
+
+```
+2026-09-29T15:12:40.882+0000    preparing collections to restore from
+2026-09-29T15:12:40.882+0000    don't know what to do with subdirectory `labdb`, skipping...
+2026-09-29T15:12:40.945+0000    finished restoring `labdb.prova` (1 document, 0 failures)
+2026-09-29T15:12:40.945+0000    restoring users from `archive on stdin`
+2026-09-29T15:12:41.042+0000    replaying oplog
+2026-09-29T15:12:41.044+0000    applied 1 oplog entries
+2026-09-29T15:12:41.044+0000    1 document(s) restored successfully. 0 document(s) failed to restore.
+```
+
+</details>
+
 **Due tipi di messaggi da conoscere:**
 
 - `don't know what to do with subdirectory ..., skipping...`: **innocui**, compaiono ripristinando un archivio che contiene l'oplog;
@@ -1115,6 +1250,19 @@ rs_eval 'printjson(db.getSiblingDB("labdb").prova.find({}, { _id: 0, msg: 1 }).t
 ## Parte 11 — Manutenzione a rotazione
 
 È l'operazione più comune su un replica set in produzione: aggiornamenti di MongoDB, patch del sistema operativo, cambi di configurazione. La regola: **prima i secondari, uno alla volta; il primario per ultimo, dopo avergli fatto cedere il ruolo.**
+
+```mermaid
+flowchart TD
+    A["Riavvia un secondario"] --> B{"È tornato<br/>SECONDARY?"}
+    B -- "no, attendi" --> B
+    B -- "sì" --> C{"Altri secondari<br/>da riavviare?"}
+    C -- "sì" --> A
+    C -- "no" --> D["rs.stepDown sul primario"]
+    D --> E{"Un altro nodo<br/>è PRIMARY?"}
+    E -- "no, attendi" --> E
+    E -- "sì" --> F["Riavvia il vecchio primario"]
+    F --> G["Con priority 2 riprende il ruolo"]
+```
 
 > ⚠️ **Un comando alla volta.** Ogni riavvio dura circa 16 secondi (lo spegnimento ordinato). Durante il collaudo, incollando i comandi successivi mentre un riavvio era in corso, il terminale ha mescolato le righe e lo `stepDown` non è stato eseguito. Aspetta sempre il prompt, e conta i tempi di attesa dalla fine del riavvio.
 

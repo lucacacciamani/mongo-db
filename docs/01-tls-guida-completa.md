@@ -62,6 +62,36 @@ Senza la seconda, la prima vale poco: un impostore potrebbe farsi dare la passwo
 
 **Perché una CA e non un semplice certificato "self-signed"?** Con un certificato self-signed ogni rinnovo produce un certificato nuovo, da ridistribuire a tutti i client. Con una CA, i client ricevono una sola volta il certificato della CA (valido 10 anni) e si fidano automaticamente di ogni certificato del server firmato da lei: i rinnovi diventano invisibili ai client.
 
+### Come si collegano i pezzi
+
+```mermaid
+flowchart TD
+    CAKEY["ca.key<br/>chiave privata della CA<br/>segreta"] -- "firma" --> CRT["server.crt<br/>certificato del server"]
+    SKEY["server.key<br/>chiave del server, segreta"] --> PEM["server.pem<br/>certificato + chiave<br/>letto da MongoDB"]
+    CRT --> PEM
+    CAPEM["ca.pem<br/>certificato della CA, pubblico"] -- "copiato sul PC" --> CLI["Client<br/>VS Code, applicazione"]
+    CLI -- "verifica firma, indirizzo nel SAN, scadenza" --> CRT
+```
+
+E cosa succede a ogni connessione:
+
+```mermaid
+sequenceDiagram
+    participant C as Client con ca.pem
+    participant M as MongoDB in requireTLS
+    C->>M: richiesta di connessione TLS
+    M-->>C: presenta server.crt
+    C->>C: firmato dalla CA? indirizzo nel SAN? non scaduto?
+    alt verifica riuscita
+        C->>M: canale cifrato TLS 1.2 o 1.3
+        C->>M: utente e password, cifrati
+        M-->>C: autenticazione riuscita
+    else verifica fallita
+        C--xM: connessione interrotta dal client
+    end
+    Note over M: un client senza TLS viene rifiutato:<br/>connection closed
+```
+
 ### I file che creeremo
 
 | File | Cos'è | Segreto? | Dove va |
@@ -481,6 +511,16 @@ openssl s_client -connect 127.0.0.1:27017 -CAfile tls/ca.pem </dev/null 2>/dev/n
 
 ✅ **Devi vedere:** `Verify return code: 0 (ok)` e un protocollo `TLSv1.3` o `TLSv1.2`.
 
+<details>
+<summary>📋 Output reale del collaudo</summary>
+
+```
+Protocol: TLSv1.3
+Verify return code: 0 (ok)
+```
+
+</details>
+
 ### 7.3 Le versioni vecchie sono rifiutate?
 
 ```bash
@@ -511,6 +551,17 @@ sudo docker exec -it mongo mongosh -u admin -p --authenticationDatabase admin --
 ```
 
 ✅ **Deve fallire** con un errore di connessione (per esempio `connection closed` o `MongoServerSelectionError`). Vuol dire che le connessioni in chiaro sono davvero rifiutate.
+
+<details>
+<summary>📋 Output reale del collaudo</summary>
+
+```
+$ sudo docker exec -it mongo mongosh -u admin -p --authenticationDatabase admin --eval 'db.runCommand({ping:1})'
+Enter password: *******************************
+MongoServerSelectionError: connection <monitor> to 127.0.0.1:27017 closed
+```
+
+</details>
 
 ---
 
@@ -585,6 +636,21 @@ sudo journalctl -u mongo-backup.service -n 5 --no-pager
 ```
 
 ✅ **Devi vedere** due volte `Backup completato`: una dall'esecuzione manuale, una da quella tramite systemd.
+
+<details>
+<summary>📋 Output reale del collaudo</summary>
+
+```
+$ sudo /usr/local/bin/mongo-backup.sh
+Backup completato: /var/backups/mongodb/daily/mongo-20260928-134803.archive.gz (4.0K)
+
+$ sudo journalctl -u mongo-backup.service -n 5 --no-pager
+Sep 28 13:48:08 azmdb01 systemd[1]: Starting mongo-backup.service - Backup MongoDB...
+Sep 28 13:48:09 azmdb01 mongo-backup.sh[2405]: Backup completato: /var/backups/mongodb/daily/mongo-20260928-134809.archive.gz (4.0K)
+Sep 28 13:48:09 azmdb01 systemd[1]: Finished mongo-backup.service - Backup MongoDB.
+```
+
+</details>
 
 ### 8.3 Il comando di ripristino con TLS
 
@@ -853,6 +919,24 @@ openssl s_client -connect 127.0.0.1:27017 -CAfile ~/mongodb/tls/ca.pem </dev/nul
 
 - `0 (ok)`: lato server il TLS è a posto; il problema è nella configurazione del client.
 - Qualunque altro codice: il problema è nel certificato o nella configurazione del server.
+
+---
+
+## Parte 12 bis — Le scelte: laboratorio e produzione
+
+Guida collaudata sull'istanza di sviluppo della guida 00, con un solo client (VS Code). Le scelte dipendono da quel contesto:
+
+| Scelta | Nel laboratorio (collaudato) | Perché | In produzione |
+|---|---|---|---|
+| Autorità di certificazione | CA privata creata sulla VM, valida 10 anni | Nessuna CA aziendale disponibile; costo zero | CA aziendale o pubblica (i client la conoscono già) |
+| Chiave della CA | Copia sul PC, conservata **anche** sulla VM (opzione B) | Rinnovi più semplici in sviluppo | Solo offline o in un gestore di segreti; mai sui server |
+| Certificato del server | IP pubblico e privato nel SAN, 825 giorni | La VM non aveva ancora un nome DNS | Nomi DNS, rinnovo automatico e monitorato |
+| Attivazione | Ricreazione dell'istanza (pochi secondi di interruzione) | Istanza singola, un solo client | Migrazione a rotazione su un replica set (guida 02) |
+| Autenticazione dei client | Utente e password su TLS (`tlsAllowConnectionsWithoutCertificates`) | Semplicità | Password o certificati client x.509, secondo le policy |
+| Esposizione | Porta 27017 raggiungibile solo dal proprio IP (NSG) | Sviluppo da un PC esterno | Solo rete privata |
+| Protocolli | TLS 1.2 e 1.3 | Standard attuale | Idem |
+
+Cosa **non** fa il TLS: cifra i dati **in transito**, non quelli **salvati sul disco**, che in MongoDB Community si proteggono con la cifratura dei dischi (su Azure attiva per impostazione predefinita).
 
 ---
 

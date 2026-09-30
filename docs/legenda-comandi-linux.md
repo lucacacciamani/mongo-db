@@ -2,7 +2,7 @@
 
 Questa legenda spiega **tutti i comandi e i simboli** usati nelle guide del progetto: cosa fanno, cosa significano le opzioni che usiamo, e un esempio preso dalle guide. Non serve leggerla tutta: tienila aperta accanto alla guida e consultala quando incontri qualcosa che non conosci.
 
-La colonna **Guide** indica dove compare il comando: `00` installazione, `01` TLS, `02` replica set, `03` sharding.
+La colonna **Guide** indica dove compare il comando: `00` installazione, `01` TLS, `02` replica set, `03` sharding. Tutti i comandi elencati sono stati usati durante il collaudo delle guide.
 
 ---
 
@@ -23,6 +23,7 @@ La colonna **Guide** indica dove compare il comando: `00` installazione, `01` TL
 13. [Docker e Docker Compose](#13-docker-e-docker-compose)
 14. [Strumenti di MongoDB](#14-strumenti-di-mongodb)
 15. [PowerShell sul PC Windows](#15-powershell-sul-pc-windows)
+15. bis [Elementi delle guide che non sono comandi](#15-bis-elementi-delle-guide-che-non-sono-comandi)
 16. [Comandi pericolosi](#16-comandi-pericolosi)
 
 ---
@@ -183,6 +184,7 @@ Tutto ciò che sta tra la prima riga e la riga `EOF` diventa l'input del comando
 | `rm` | Elimina file | `-f` senza chiedere conferma e senza errore se non esiste | `rm -f /tmp/rs-backup.archive.gz` | 00 01 02 |
 | `ln` | Crea un collegamento | Senza opzioni: *hard link* (lo stesso file visibile da due posizioni, nessuno spazio in più); `-f` sostituisce se esiste | `ln -f "$FILE" "$DEST/weekly/"` | 00 01 02 |
 | `cat` | Mostra il contenuto di un file (o lo passa a un altro comando) | | `sudo cat root_password.txt` | 00 01 02 |
+| `tee` | Scrive in un file ciò che riceve dalla pipe (e lo mostra anche a schermo); `-a` aggiunge in fondo invece di sovrascrivere. Con `sudo` scrive in file riservati a root; `> /dev/null` evita di mostrare il contenuto | | `... \| sudo tee /etc/tmpfiles.d/mongodb-thp.conf > /dev/null` | 00 01 02 03 |
 | `head` | Mostra le prime righe | `-N` le prime N righe | `sudo head -3 /usr/local/bin/mongo-backup.sh` | 00 01 02 |
 | `wc -l` | Conta le righe | | `docker compose config --services \| wc -l` | 03 |
 | `tail` | Mostra le ultime righe | `-N` le ultime N righe | `... \| tail -1` | 02 |
@@ -313,6 +315,15 @@ Ogni file ha un **proprietario**, un **gruppo** e dei **permessi**. In `ls -l` c
 | `sshd -T` | Mostra la configurazione effettiva del server SSH | | 00 |
 | `sshd -t` | Controlla che la configurazione di SSH sia valida | | 00 |
 
+**Direttive di configurazione di SSH** usate nella guida 00 (file in `/etc/ssh/sshd_config.d/`):
+
+| Direttiva | Significato |
+|---|---|
+| `PubkeyAuthentication yes` | Accesso con chiave consentito |
+| `PasswordAuthentication no` | Accesso con password vietato |
+| `KbdInteractiveAuthentication no` | Vietate anche le password inserite in modo interattivo |
+| `PermitRootLogin no` | Vietato l'accesso diretto come `root` |
+
 ---
 
 ## 12. Certificati e crittografia (openssl)
@@ -422,6 +433,16 @@ Dentro `mongosh`, i comandi usati nelle guide:
 | `git status` / `git mv` / `git add --renormalize .` | Stato del repository / spostamento con cronologia / riapplica le regole di `.gitattributes` | — |
 
 > **Percorsi Windows:** usano `\`. Nelle stringhe di connessione di MongoDB si scrivono con `/` (`C:/Users/...`), e gli spazi vanno codificati come `%20` o evitati.
+
+---
+
+## 15 bis. Elementi delle guide che non sono comandi
+
+| Elemento | Significato |
+|---|---|
+| Blocchi ` ```mermaid ` | Diagrammi disegnati da GitHub (su altri visualizzatori compaiono come testo) |
+| `<details>` / `<summary>` | Sezioni richiudibili, usate per gli output reali del collaudo |
+| `<FQDN>`, `<IP_PRIVATO_VM>`, … | Segnaposto da sostituire, togliendo anche `<` e `>` |
 
 ---
 

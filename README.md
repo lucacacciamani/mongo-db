@@ -41,6 +41,24 @@ Per tutte le guide vale la **[legenda dei comandi](docs/legenda-comandi-linux.md
 
 La guida 01 presuppone di aver completato la 00; la 02 presuppone la 00 e la 01 (riusa la CA per il TLS); la 03 presuppone la 00 e la 01, e la 02 è consigliata. Gli appunti di laboratorio ([02](docs/02-replica-set-appunti.md), [03](docs/03-sharding-appunti.md)) raccolgono il diario delle prove, delle scelte e degli inconvenienti da cui sono nate le guide; la [procedura di laboratorio della 03](docs/03-sharding-procedura-laboratorio.md) è la bozza usata per il collaudo.
 
+### Il percorso
+
+```mermaid
+flowchart LR
+    G00["00 · Installazione<br/>istanza singola"] --> G01["01 · TLS<br/>CA privata"]
+    G01 --> G02["02 · Replica set<br/>3 nodi"]
+    G01 --> G03["03 · Sharding<br/>10 processi"]
+    G02 -. "consigliata" .-> G03
+    LEG["Legenda dei comandi"] -.- G00
+```
+
+### Come leggere le guide
+
+- I riquadri **🧭** spiegano ogni scelta, distinguendo ciò che è stato fatto **nel laboratorio** (e collaudato) da ciò che si sceglie **in produzione**.
+- I blocchi **📋 Output reale del collaudo**, richiudibili, riportano l'output ottenuto durante le prove: servono a confrontare il proprio risultato con quello atteso.
+- I diagrammi (architetture, flussi, sequenze, grafici) sono scritti in **Mermaid** e vengono disegnati direttamente da GitHub.
+- Il simbolo **🧪** segnala le parti non ancora collaudate.
+
 ## Struttura del repository
 
 ```

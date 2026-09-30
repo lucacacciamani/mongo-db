@@ -86,6 +86,34 @@ Ti dice **chi sei** (`azureuser`), **dove sei** (`mongo-vm`, cioè la VM) e **in
 
 ---
 
+### Il quadro d'insieme
+
+Ecco come si collegano tra loro i pezzi che installeremo (il diagramma è disegnato direttamente da GitHub):
+
+```mermaid
+flowchart LR
+    PC["Il tuo PC<br/>PowerShell, VS Code"]
+    subgraph AZ["Azure"]
+        NSG["NSG<br/>firewall di Azure"]
+        subgraph VM["VM Debian 13"]
+            DK["Docker"]
+            MG["Container mongo<br/>MongoDB 8.0"]
+            VOL[("Volume mongo-data<br/>i dati")]
+            TM["Timer systemd<br/>02:30 UTC"]
+            BK[("/var/backups/mongodb")]
+        end
+    end
+    PC -- "SSH, porta 22" --> NSG
+    PC -. "27017: tunnel SSH<br/>o accesso diretto" .-> NSG
+    NSG --> VM
+    DK --> MG
+    MG --- VOL
+    TM -- "mongo-backup.sh" --> MG
+    MG -- "mongodump" --> BK
+```
+
+---
+
 ## Parte 1 — Come usare questa guida
 
 ### 1.1 I blocchi di comandi
@@ -563,6 +591,23 @@ Al posto di `PASSWORD` metti quella letta con `sudo cat ~/mongodb/appuser_passwo
 
 Le copie settimanali e mensili non occupano spazio in più finché esiste anche quella giornaliera dello stesso giorno (sono *hard link*: lo stesso file visto da due cartelle).
 
+Il flusso di un backup notturno:
+
+```mermaid
+sequenceDiagram
+    participant T as Timer systemd
+    participant S as mongo-backup.sh
+    participant C as Container mongo
+    participant D as Cartella dei backup
+    T->>S: ogni notte alle 02:30 UTC
+    S->>C: docker exec, mongodump --archive --gzip
+    C-->>S: archivio compresso
+    S->>D: salva in daily/ con permessi 600
+    S->>D: domenica in weekly/, giorno 1 in monthly/ (hard link)
+    S->>D: elimina i file oltre la retention
+    Note over S: se il dump fallisce, set -e ferma lo script<br/>prima della pulizia: i vecchi backup restano
+```
+
 ### 9.1 Creare la cartella dei backup
 
 ```bash
@@ -699,6 +744,23 @@ sudo journalctl -u mongo-backup.service -n 10 --no-pager
 
 ✅ **Devi vedere:** `Backup completato: ...` e `Finished mongo-backup.service`.
 
+<details>
+<summary>📋 Output reale del collaudo</summary>
+
+```
+Sep 28 13:48:08 azmdb01 systemd[1]: Starting mongo-backup.service - Backup MongoDB...
+Sep 28 13:48:09 azmdb01 mongo-backup.sh[2405]: Backup completato: /var/backups/mongodb/daily/mongo-20260928-134809.archive.gz (4.0K)
+Sep 28 13:48:09 azmdb01 systemd[1]: mongo-backup.service: Deactivated successfully.
+Sep 28 13:48:09 azmdb01 systemd[1]: Finished mongo-backup.service - Backup MongoDB.
+
+# La prima esecuzione notturna automatica:
+Sep 29 02:30:00 azmdb01 systemd[1]: Starting mongo-backup.service - Backup MongoDB...
+Sep 29 02:30:00 azmdb01 mongo-backup.sh[4682]: Backup completato: /var/backups/mongodb/daily/mongo-20260929-023000.archive.gz (4.0K)
+Sep 29 02:30:00 azmdb01 systemd[1]: Finished mongo-backup.service - Backup MongoDB.
+```
+
+</details>
+
 In futuro, con lo stesso comando `journalctl` puoi controllare com'è andato il backup di ogni notte.
 
 ### 9.6 Quanto spazio occupano i backup
@@ -781,6 +843,19 @@ sudo docker exec -it -e APP_PWD="$(sudo cat ~/mongodb/appuser_password.txt)" mon
 ---
 
 ## Parte 11 — Collegarsi dal tuo PC di sviluppo
+
+```mermaid
+flowchart LR
+    PC["PC di sviluppo"]
+    subgraph TUN["Tunnel SSH, consigliato"]
+        A1["localhost:27017 sul PC"] -- "cifrato da SSH, porta 22" --> A2["127.0.0.1:27017 sulla VM"]
+    end
+    subgraph DIR["Accesso diretto, solo sviluppo"]
+        B1["IP pubblico:27017"] -- "NSG: solo il tuo IP<br/>in chiaro senza TLS" --> B2["IP privato:27017 sulla VM"]
+    end
+    PC --> A1
+    PC --> B1
+```
 
 Per come lo abbiamo configurato, MongoDB accetta connessioni **solo dalla VM stessa**. Per collegarti dal tuo PC ci sono due strade.
 
@@ -1280,6 +1355,25 @@ Quando chiedi aiuto a un collega o in chat, fornisci:
 3. se riguarda MongoDB, solo le righe di avviso/errore: `sudo docker compose logs mongo | grep -E '"s":"(W|E|F)"'`.
 
 E **controlla che nel testo non ci siano password.**
+
+---
+
+## Parte 15 bis — Le scelte: laboratorio e produzione
+
+Questa guida è stata collaudata su una VM Azure con Debian 13, 2 vCPU e 7,8 GB di RAM, usata come **ambiente di sviluppo**. Ogni scelta qui sotto è giustificata da quel contesto; l'ultima colonna indica cosa scegliere in produzione.
+
+| Scelta | Nel laboratorio (collaudato) | Perché | In produzione |
+|---|---|---|---|
+| Installazione | Immagine Docker ufficiale `mongo:8.0` | Nessun pacchetto server ufficiale per Debian 13 | Docker o pacchetti su un sistema supportato, versione fissata e aggiornata in modo controllato |
+| Topologia | Una sola istanza | Ambiente di sviluppo | Replica set di tre nodi (guida 02) |
+| Porta | Pubblicata su `127.0.0.1` | Docker scavalca il firewall di Linux | Idem, più rete privata |
+| Accesso | Tunnel SSH, o accesso diretto con NSG sul proprio IP | Un solo sviluppatore | Solo rete privata, TLS obbligatorio (guida 01) |
+| Disco | Disco di sistema ext4 (avviso XFS) | Semplicità | Disco dati dedicato XFS |
+| Memoria | Cache predefinita, nessuno swap | VM dedicata all'istanza | RAM sul *working set*, swap piccolo e monitorato |
+| Spegnimento | `stop_grace_period: 1m` | Evita chiusure forzate dopo 10 s | Idem |
+| Backup | Locale, notturno, 7/4/12 | Protezione da errori e cancellazioni | Copia anche fuori dalla VM, ripristino provato periodicamente |
+| Password | File `600` sulla VM | Semplicità | Key Vault o gestore di segreti |
+| Aggiornamenti | Automatici, compreso Docker | Nessun servizio critico | Docker e MongoDB in finestre di manutenzione |
 
 ---
 

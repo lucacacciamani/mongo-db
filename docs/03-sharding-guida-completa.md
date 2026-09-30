@@ -69,6 +69,23 @@ Un replica set (guida 02) **copia** gli stessi dati su più server: protegge dai
 
 **Ogni shard e i config server sono replica set:** tutto ciò che hai visto nella guida 02 (elezioni, failover, keyFile) vale per ciascuno di loro.
 
+```mermaid
+flowchart TD
+    APP["Applicazioni<br/>VS Code"] -- "porta 27200, TLS" --> R["Router mongos"]
+    R <--> CFG
+    R --> SH1
+    R --> SH2
+    subgraph CFG["Config server, replica set cfgrs"]
+        C1["mongo-cfg1"] --- C2["mongo-cfg2"] --- C3["mongo-cfg3"]
+    end
+    subgraph SH1["Shard sh1, replica set"]
+        A1["mongo-sh1a"] --- B1["mongo-sh1b"] --- D1["mongo-sh1c"]
+    end
+    subgraph SH2["Shard sh2, replica set"]
+        A2["mongo-sh2a"] --- B2["mongo-sh2b"] --- D2["mongo-sh2c"]
+    end
+```
+
 ### 0.3 Replica e sharding: cosa li distingue e come si combinano
 
 Sono due meccanismi diversi, che risolvono problemi diversi:
@@ -115,6 +132,17 @@ Un processo interno controlla continuamente se gli shard hanno quantità di dati
 ### 0.6 Query mirate e query su tutti gli shard
 
 Il router guarda la query: se contiene la shard key, sa su quale shard stanno i dati e interroga **solo quello** (*query mirata*). Se non la contiene, deve interrogare **tutti** gli shard e unire i risultati (*scatter-gather*). Con due shard la differenza è piccola; con cinquanta shard, ogni query senza shard key coinvolge tutto il cluster. **La shard key si sceglie guardando le query più frequenti dell'applicazione.**
+
+```mermaid
+flowchart TD
+    Q["Query al router"] --> K{"Contiene la<br/>shard key?"}
+    K -- "no" --> ALL["Tutti gli shard<br/>SHARD_MERGE"]
+    K -- "sì" --> T{"Uguaglianza<br/>o intervallo?"}
+    T -- "uguaglianza" --> ONE["Un solo shard<br/>SINGLE_SHARD"]
+    T -- "intervallo" --> H{"Chiave hashed?"}
+    H -- "sì" --> ALL
+    H -- "no, a intervalli" --> SOME["Solo gli shard che hanno<br/>quell'intervallo"]
+```
 
 ### 0.7 Quando serve davvero
 
@@ -664,6 +692,29 @@ sh_eval 'db.getSiblingDB("labdb").ordini.getShardDistribution()'
 
 ✅ Nel collaudo **50,5% / 49,5%** (101.000 e 99.000 documenti): l'hash sparge i clienti in modo uniforme.
 
+```mermaid
+pie showData
+    title Documenti per shard in labdb.ordini con shard key hashed
+    "sh1" : 101000
+    "sh2" : 99000
+```
+
+<details>
+<summary>📋 Output reale del collaudo (estratto)</summary>
+
+```
+Totals
+{
+  data: '26.12MiB',
+  docs: 200000,
+  chunks: 2,
+  'Shard sh2': [ '49.5 % data', '49.5 % docs in cluster', '137B avg obj size on shard' ],
+  'Shard sh1': [ '50.5 % data', '50.5 % docs in cluster', '137B avg obj size on shard' ]
+}
+```
+
+</details>
+
 Noterai **un solo chunk per shard**, da circa 13 MB, nonostante la dimensione di riferimento di 1 MB. Non è un errore: una collezione hashed nasce già divisa in un intervallo per shard, e il bilanciatore non divide ciò che è già bilanciato. Vedi il chiarimento in Parte 0.4.
 
 ---
@@ -683,6 +734,17 @@ sh_eval 'const e = db.getSiblingDB("labdb").ordini.find({ clienteId: { $gte: 100
 | `{ clienteId: 42 }` | `SINGLE_SHARD`, 1 shard | Contiene la shard key |
 | `{ importo: { $gt: 990 } }` | `SHARD_MERGE`, 2 shard | Non contiene la shard key |
 | `{ clienteId: { $gte: 100, $lt: 110 } }` | `SHARD_MERGE`, 2 shard | Con l'hash, valori vicini stanno su shard diversi |
+
+<details>
+<summary>📋 Output reale del collaudo</summary>
+
+```
+Con la shard key    -> SINGLE_SHARD - shard interrogati: 1
+Senza la shard key  -> SHARD_MERGE - shard interrogati: 2
+Intervallo su chiave hashed -> SHARD_MERGE - shard interrogati: 2
+```
+
+</details>
 
 ---
 
@@ -726,7 +788,33 @@ ch.find({ uuid: u }).sort({ min: -1 }).limit(1).forEach(c => print("Ultimo chunk
 2. il bilanciatore ha subito spostato **5 intervalli da circa 1 MB** (`1023KiB` per chunk) sull'altro shard;
 3. l'ultimo intervallo, quello che riceve ogni documento con un timestamp più alto, è rimasto su `sh2`: **tutte le nuove scritture vanno lì**. È lo *shard caldo*: il bilanciatore riequilibra i dati già scritti, ma non può distribuire le scritture nuove.
 
+<details>
+<summary>📋 Output reale del collaudo</summary>
+
+```
+{ _id: 'sh1', chunk: 5 }
+{ _id: 'sh2', chunk: 1 }
+Ultimo chunk, che riceve TUTTI i nuovi inserimenti: sh2
+```
+
+</details>
+
 ### 10.1 I conti che non tornano: i documenti orfani
+
+```mermaid
+sequenceDiagram
+    participant B as Bilanciatore
+    participant S2 as sh2, origine
+    participant S1 as sh1, destinazione
+    participant R as Router
+    B->>S2: sposta un intervallo di circa 1 MB
+    S2->>S1: copia i documenti
+    B->>B: aggiorna la mappa nei config server
+    Note over S2: le copie restano su sh2 come ORFANI
+    R->>S1: le query per quell'intervallo vanno a sh1
+    R->>S2: e su sh2 gli orfani vengono filtrati
+    Note over S2: dopo orphanCleanupDelaySecs (900 s)<br/>cancellazione degli orfani
+```
 
 Subito dopo il caricamento, `getShardDistribution` sommava **142.275 documenti** invece di 100.000: `sh1` ne aveva ricevuti 42.275 con le migrazioni, ma `sh2` ne contava ancora tutti e 100.000.
 
@@ -738,6 +826,33 @@ node_eval mongo-sh2a 27221 'print("Intervalli in attesa di cancellazione:", db.g
 ```
 
 ✅ Nel collaudo: router `100000`, **5** intervalli in attesa, ritardo **900** secondi. Dopo 15 minuti la distribuzione è tornata a **100.000** (42.275 + 57.725), e i 5 intervalli migrati erano diventati **uno solo**: MongoDB riunisce automaticamente gli intervalli contigui dello stesso shard.
+
+Documenti **contati per shard** da `getShardDistribution`, subito dopo le migrazioni (a sinistra, con gli orfani) e dopo 15 minuti (a destra):
+
+```mermaid
+pie showData
+    title Subito dopo le migrazioni, 142.275 contati su 100.000 reali
+    "sh1 migrati" : 42275
+    "sh2 compresi gli orfani" : 100000
+```
+
+```mermaid
+pie showData
+    title Dopo la pulizia degli orfani, 100.000
+    "sh1" : 42275
+    "sh2" : 57725
+```
+
+<details>
+<summary>📋 Output reale del collaudo</summary>
+
+```
+Documenti visti dal router: 100000
+Intervalli in attesa di cancellazione: 5
+Ritardo di pulizia (secondi): 900
+```
+
+</details>
 
 ### 10.2 Il rovescio della medaglia
 
@@ -771,6 +886,21 @@ sh_eval 'db.getSiblingDB("config").changelog.find({ what: /moveChunk.commit|move
 
 ✅ Nel collaudo: abilitato, `mode: 'full'`, `inBalancerRound: false`; cinque `moveChunk.commit` su `labdb.eventi` in circa 6 secondi, poco più di un secondo ciascuno.
 
+<details>
+<summary>📋 Output reale del collaudo</summary>
+
+```
+Bilanciatore abilitato: true
+{ mode: 'full', inBalancerRound: false, numBalancerRounds: Long('91'), ... }
+2026-09-30T07:27:47.077Z moveChunk.commit labdb.eventi
+2026-09-30T07:27:45.677Z moveChunk.commit labdb.eventi
+2026-09-30T07:27:44.322Z moveChunk.commit labdb.eventi
+2026-09-30T07:27:42.929Z moveChunk.commit labdb.eventi
+2026-09-30T07:27:41.429Z moveChunk.commit labdb.eventi
+```
+
+</details>
+
 Dopo quelle cinque migrazioni il bilanciatore si è **fermato pur restando attivo**: al netto degli orfani, la differenza tra gli shard era scesa sotto la soglia.
 
 > 🧭 **In produzione** le migrazioni, con intervalli da 128 MB e carico reale, durano molto di più e consumano disco e rete. Si possono limitare a una **finestra oraria** (*balancing window*), per esempio di notte, e fuori dalla finestra del backup.
@@ -795,6 +925,20 @@ sudo docker compose start mongo-sh1a
 ```
 
 ✅ Nel collaudo: stop in 16 secondi (spegnimento ordinato), conteggio e scrittura riusciti attraverso il router, `mongo-sh1b` nuovo primario dello shard 1.
+
+<details>
+<summary>📋 Output reale del collaudo</summary>
+
+```
+✔ Container mongo-sh1a Stopped                                  16.2s
+Documenti: 200000
+Scrittura riuscita
+mongo-sh1a:27211 (not reachable/healthy)
+mongo-sh1b:27212 PRIMARY
+mongo-sh1c:27213 SECONDARY
+```
+
+</details>
 
 ---
 
@@ -893,6 +1037,23 @@ sudo docker exec mongo-router mongosh --port 27200 --quiet --eval 'db.runCommand
 
 ✅ Nel collaudo: shard con stato 1 e dati intatti; router e shard in `requireTLS`; **62 connessioni TLS 1.3** ricevute dallo shard 1 e nessuna con versioni più vecchie; `Verify return code: 0 (ok)` con TLS 1.3; l'ultimo comando, senza TLS, **fallisce** con `connection ... closed`.
 
+<details>
+<summary>📋 Output reale del collaudo</summary>
+
+```
+sh1 stato: 1
+sh2 stato: 1
+ordini: 200001 - eventi: 100000
+Router: requireTLS
+Shard 1: requireTLS
+{ '1.0': Long('0'), '1.1': Long('0'), '1.2': Long('0'), '1.3': Long('62'), unknown: Long('0') }
+Protocol: TLSv1.3
+Verify return code: 0 (ok)
+MongoServerSelectionError: connection <monitor> to 127.0.0.1:27200 closed
+```
+
+</details>
+
 ---
 
 ## Parte 14 — Accesso dal tuo PC
@@ -974,6 +1135,20 @@ Rispetto agli script delle guide precedenti ci sono tre accorgimenti:
 - **gli utenti del database** sono inclusi nel backup (`--dumpDbUsersAndRoles`).
 
 In **tre parti** (la prima inserisce il percorso vero del laboratorio):
+
+```mermaid
+flowchart TD
+    S["Timer 03:30 UTC"] --> STOP["Ferma il bilanciatore"]
+    STOP --> OK1{"Fermato?"}
+    OK1 -- "no" --> FAIL1["Esce con errore<br/>nulla da riattivare"]
+    OK1 -- "sì" --> TRAP["Registra la trap EXIT"]
+    TRAP --> DUMP["mongodump via router<br/>TLS, utenti del database"]
+    DUMP --> OK2{"Riuscito?"}
+    OK2 -- "sì" --> RET["Salva, weekly e monthly,<br/>pulizia retention"]
+    OK2 -- "no" --> EXIT
+    RET --> EXIT["Uscita"]
+    EXIT --> T2["trap: elimina il file incompleto<br/>e RIATTIVA il bilanciatore"]
+```
 
 ```bash
 sudo tee /usr/local/bin/mongo-sh-backup.sh > /dev/null << EOF
@@ -1059,6 +1234,17 @@ sh_eval 'print("Bilanciatore abilitato:", sh.getBalancerState())'
 
 ✅ `Backup completato` (nel collaudo 3,6 MB), il file con **`-rw-------`**, e il bilanciatore di nuovo `true`.
 
+<details>
+<summary>📋 Output reale del collaudo</summary>
+
+```
+Backup completato: /var/backups/mongo-lab-sh/daily/labdb-20260930-185231.archive.gz (3.6M)
+-rw------- 1 root root 3.6M Sep 30 18:52 labdb-20260930-185231.archive.gz
+Bilanciatore abilitato: true
+```
+
+</details>
+
 > **Permessi del file.** In una versione precedente dei comandi manuali, il backup veniva scritto sull'host con `sudo tee`, e nasceva `-rw-r--r--`: l'`umask 077` dentro il container non vale per i file creati sull'host. Lo script scrive il file dall'host con `umask 077`, quindi nasce protetto.
 
 ### 16.4 Il timer
@@ -1117,6 +1303,22 @@ sh_eval 'const d = db.getSiblingDB("labdb_ripristino"); print("ordini:", d.ordin
 ```
 
 ✅ Nel collaudo: **300.001 documenti** ripristinati in circa 11 secondi, conteggi corretti, e **`ordini distribuita? false`**.
+
+<details>
+<summary>📋 Output reale del collaudo (estratto)</summary>
+
+```
+finished restoring `labdb_ripristino.eventi` (100000 documents, 0 failures)
+finished restoring `labdb_ripristino.ordini` (200001 documents, 0 failures)
+restoring indexes for collection `labdb_ripristino.ordini` from metadata
+index: ... Key:bson.D{bson.E{Key:"clienteId", Value:"hashed"}} ...
+index: ... Key:bson.D{bson.E{Key:"ts", Value:1}} ...
+300001 document(s) restored successfully. 0 document(s) failed to restore.
+ordini: 200001 - eventi: 100000
+ordini distribuita? false
+```
+
+</details>
 
 **Cosa significa:** un ripristino attraverso il router ricrea le collezioni **non distribuite**, tutte sullo shard primario del database. Gli **indici** della shard key però vengono ripristinati (nell'output di `mongorestore` compaiono `clienteId_hashed` e `ts_1`): la collezione si può ridistribuire dopo con `sh.shardCollection`, oppure la si crea e distribuisce **prima** del ripristino.
 

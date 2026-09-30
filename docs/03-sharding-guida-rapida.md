@@ -12,6 +12,14 @@ Cluster completo su una VM (laboratorio): 3 config server, 2 shard × 3 nodi, 1 
 
 **Replica e sharding:** la replica tiene **copie degli stessi dati** (resistenza ai guasti), lo sharding **divide i dati** tra gruppi di server (capacità). Ogni shard e i config server sono replica set, e la replica avviene dentro ciascuno shard; ma con shard da un solo nodo non ci sono copie, e ogni guasto rende irraggiungibile una parte dei dati. Qui: shard da 3 nodi → entrambe le proprietà. Il router singolo non è replicato (in produzione ≥ 2).
 
+```mermaid
+flowchart LR
+    APP["VS Code"] -- "27200 TLS" --> R["mongos"]
+    R --> CFG["cfgrs<br/>3 nodi"]
+    R --> SH1["sh1<br/>3 nodi"]
+    R --> SH2["sh2<br/>3 nodi"]
+```
+
 | Componente | RS | Container | Porte |
 |---|---|---|---|
 | Config server | `cfgrs` | `mongo-cfg1..3` | 27201–27203 |
