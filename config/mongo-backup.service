@@ -1,9 +1,0 @@
-# Installazione: /etc/systemd/system/mongo-backup.service
-[Unit]
-Description=Backup MongoDB
-Requires=docker.service
-After=docker.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/mongo-backup.sh
