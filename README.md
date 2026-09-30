@@ -22,7 +22,7 @@ Il setup è pensato per ambienti di **sviluppo e test**, con una checklist dedic
 
 ## Cosa comprende
 
-Autenticazione, utente applicativo con permessi limitati, backup automatici con retention giornaliera/settimanale/mensile, accesso dall'ambiente di sviluppo (tunnel SSH o accesso diretto), gestione dei log e hardening di base del sistema (aggiornamenti automatici, SSH solo con chiave). Una seconda parte copre la cifratura delle connessioni con **TLS**, tramite una CA privata, e una terza il **replica set**, costruito in laboratorio e accompagnato dallo scenario di produzione.
+Autenticazione, utente applicativo con permessi limitati, backup automatici con retention giornaliera/settimanale/mensile, accesso dall'ambiente di sviluppo (tunnel SSH o accesso diretto), gestione dei log e hardening di base del sistema (aggiornamenti automatici, SSH solo con chiave). Una seconda parte copre la cifratura delle connessioni con **TLS**, tramite una CA privata, una terza il **replica set** e una quarta lo **sharding**, costruiti in laboratorio e accompagnati dallo scenario di produzione.
 
 > **Perché Docker?** L'immagine Docker ufficiale di MongoDB include tutte le dipendenze, quindi funziona su Debian 13 senza forzature, e rende semplici aggiornamenti e rimozione.
 
@@ -35,10 +35,11 @@ Le guide sono numerate nell'ordine in cui vanno seguite. Ogni argomento ha due v
 | 00 | Installazione, sicurezza di base, utente applicativo, backup, accesso, manutenzione | [00-guida-completa](docs/00-guida-completa.md) | [00-guida-rapida](docs/00-guida-rapida.md) |
 | 01 | Cifratura delle connessioni con TLS (CA privata, client, rinnovi) | [01-tls-guida-completa](docs/01-tls-guida-completa.md) | [01-tls-guida-rapida](docs/01-tls-guida-rapida.md) |
 | 02 | Replica set: costruzione, failover, accesso esterno, TLS a rotazione, backup con oplog, manutenzione | [02-replica-set-guida-completa](docs/02-replica-set-guida-completa.md) | [02-replica-set-guida-rapida](docs/02-replica-set-guida-rapida.md) |
+| 03 | Sharding: cluster completo, shard key, bilanciatore, TLS, backup notturno | [03-sharding-guida-completa](docs/03-sharding-guida-completa.md) | [03-sharding-guida-rapida](docs/03-sharding-guida-rapida.md) |
 
 Per tutte le guide vale la **[legenda dei comandi](docs/legenda-comandi-linux.md)**: spiega ogni comando Linux, simbolo della shell, comando Docker, MongoDB e PowerShell usato nel progetto, con esempi presi dalle guide.
 
-La guida 01 presuppone di aver completato la 00; la 02 presuppone la 00 e la 01 (riusa la CA per il TLS). Gli [appunti di laboratorio della guida 02](docs/02-replica-set-appunti.md) raccolgono il diario delle prove, delle scelte e degli inconvenienti da cui è nata la guida.
+La guida 01 presuppone di aver completato la 00; la 02 presuppone la 00 e la 01 (riusa la CA per il TLS); la 03 presuppone la 00 e la 01, e la 02 è consigliata. Gli appunti di laboratorio ([02](docs/02-replica-set-appunti.md), [03](docs/03-sharding-appunti.md)) raccolgono il diario delle prove, delle scelte e degli inconvenienti da cui sono nate le guide; la [procedura di laboratorio della 03](docs/03-sharding-procedura-laboratorio.md) è la bozza usata per il collaudo.
 
 ## Struttura del repository
 
@@ -53,6 +54,10 @@ La guida 01 presuppone di aver completato la 00; la 02 presuppone la 00 e la 01 
 │   ├── 02-replica-set-guida-completa.md
 │   ├── 02-replica-set-guida-rapida.md
 │   ├── 02-replica-set-appunti.md     (diario del laboratorio)
+│   ├── 03-sharding-guida-completa.md
+│   ├── 03-sharding-guida-rapida.md
+│   ├── 03-sharding-appunti.md        (diario del laboratorio)
+│   ├── 03-sharding-procedura-laboratorio.md (bozza usata per il collaudo)
 │   └── legenda-comandi-linux.md      (legenda dei comandi, valida per tutte le guide)
 └── config/
     ├── 00-base/                      Risorse della guida 00 (senza TLS)
@@ -65,13 +70,21 @@ La guida 01 presuppone di aver completato la 00; la 02 presuppone la 00 e la 01 
     │   ├── docker-compose.yml        → ~/mongodb/docker-compose.yml (sostituisce quello della 00)
     │   ├── mongo-backup.sh           → /usr/local/bin/mongo-backup.sh (sostituisce quello della 00)
     │   └── genera-certificati-tls.sh → ~/mongodb/tls/ (crea o rinnova i certificati)
-    └── 02-replica-set/               Risorse della guida 02 (laboratorio replica set)
-        ├── docker-compose.yml        → ~/mongo-lab/02-replica-set/ (fase iniziale, senza TLS)
-        ├── docker-compose-tls.yml    → ~/mongo-lab/02-replica-set/docker-compose.yml (finale, con TLS)
-        ├── server.ext.example        → ~/mongo-lab/02-replica-set/tls/server.ext
-        ├── mongo-rs-backup.sh        → /usr/local/bin/mongo-rs-backup.sh (impostare LAB e FQDN)
-        ├── mongo-rs-backup.service   → /etc/systemd/system/
-        └── mongo-rs-backup.timer     → /etc/systemd/system/ (03:00 UTC)
+    ├── 02-replica-set/               Risorse della guida 02 (laboratorio replica set)
+    │   ├── docker-compose.yml        → ~/mongo-lab/02-replica-set/ (fase iniziale, senza TLS)
+    │   ├── docker-compose-tls.yml    → ~/mongo-lab/02-replica-set/docker-compose.yml (finale, con TLS)
+    │   ├── server.ext.example        → ~/mongo-lab/02-replica-set/tls/server.ext
+    │   ├── mongo-rs-backup.sh        → /usr/local/bin/mongo-rs-backup.sh (impostare LAB e FQDN)
+    │   ├── mongo-rs-backup.service   → /etc/systemd/system/
+    │   └── mongo-rs-backup.timer     → /etc/systemd/system/ (03:00 UTC)
+    └── 03-sharding/                  Risorse della guida 03 (cluster con sharding)
+        ├── docker-compose.yml        → ~/mongo-lab/03-sharding/ (senza TLS)
+        ├── docker-compose-tls.yml    → ~/mongo-lab/03-sharding/docker-compose.yml (con TLS)
+        ├── server.ext.example        → ~/mongo-lab/03-sharding/tls/server.ext
+        ├── funzioni-lab.sh           → ~/mongo-lab/03-sharding/ (sh_eval, node_eval; versione TLS)
+        ├── mongo-sh-backup.sh        → /usr/local/bin/mongo-sh-backup.sh (impostare LAB)
+        ├── mongo-sh-backup.service   → /etc/systemd/system/
+        └── mongo-sh-backup.timer     → /etc/systemd/system/ (03:30 UTC)
 ```
 
 Ogni guida ha la propria cartella di risorse, con gli stessi file riportati nel testo, pronti da copiare sulla VM nei percorsi indicati. La guida 01 contiene solo i file che cambiano rispetto alla 00: timer, servizio systemd e impostazioni del kernel restano quelli di `00-base`.
@@ -116,6 +129,7 @@ Testato con MongoDB 8.0.32, Docker Engine 29, Docker Compose 5 su Debian 13 (Azu
 |---|---|
 | 00 | Collaudata su un'installazione reale: installazione, utente applicativo, backup e ripristino, accesso diretto, log, aggiornamenti automatici. Non ancora collaudati (🧪): tunnel SSH, log con journald, chiave SSH e disattivazione delle password, retention settimanale/mensile su un periodo reale |
 | 01 (TLS) | Parti 2–9 collaudate su un'installazione reale, compresa l'esecuzione notturna del backup con TLS. Rinnovo del certificato, rollback e script `genera-certificati-tls.sh` non ancora collaudati su VM (🧪) |
+| 03 (sharding) | Collaudata su un'installazione reale (10 container su una VM), compresi TLS a freddo, backup notturno e ripristino. Non collaudati (🧪): ripristino degli utenti dal backup, retention settimanale/mensile nel tempo; argomenti avanzati (zone, resharding, x.509) solo descritti |
 | 02 (replica set) | Collaudata su un'installazione reale (laboratorio con tre container su una VM). Non ancora collaudati (🧪): rollback del TLS, cambio password, smantellamento, retention settimanale/mensile su un periodo reale; opzioni avanzate (x.509, secondario nascosto, horizons) solo descritte |
 
 Le parti non ancora collaudate sono segnalate nelle guide con il simbolo 🧪. Se le esegui, segnala eventuali differenze.

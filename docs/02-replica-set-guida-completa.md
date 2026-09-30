@@ -463,7 +463,7 @@ Uso: `rs_eval 'comando'` esegue sul nodo 1, `rs_eval 'comando' 3` sul nodo 3.
 >
 > **Perché:** comodità. **Limite:** passa la password in un modo che la rende visibile per un istante ai processi del container: non usarla in produzione.
 >
-> **Da ricordare:** esiste solo nella sessione corrente (in una nuova sessione: `rs_eval: command not found`, va ridefinita). Senza numero interroga il nodo 1: se il nodo 1 è spento risponde `container ... is not running`, e bisogna usare `rs_eval '...' 2`. Dopo l'attivazione del TLS andrà aggiornata (Parte 8.4).
+> **Da ricordare:** esiste solo nella sessione corrente (in una nuova sessione: `rs_eval: command not found`, va ridefinita). Per non riscriverla, salvala in un file e ricaricala con `source` a ogni sessione, oppure in automatico da `~/.bashrc`: è il metodo adottato e collaudato nella guida 03 (Parte 5.4), che vale identico qui con un file `~/mongo-lab/02-replica-set/funzioni-lab.sh` contenente la definizione di `rs_eval`. Senza numero interroga il nodo 1: se il nodo 1 è spento risponde `container ... is not running`, e bisogna usare `rs_eval '...' 2`. Dopo l'attivazione del TLS andrà aggiornata (Parte 8.4).
 
 ---
 

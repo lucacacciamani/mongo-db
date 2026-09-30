@@ -1,0 +1,9 @@
+# Installazione: /etc/systemd/system/mongo-sh-backup.service
+[Unit]
+Description=Backup MongoDB cluster con sharding di laboratorio
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mongo-sh-backup.sh

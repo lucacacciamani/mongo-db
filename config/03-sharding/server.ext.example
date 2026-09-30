@@ -1,0 +1,6 @@
+# Esempio per ~/mongo-lab/03-sharding/tls/server.ext (sostituire i segnaposto).
+# clientAuth indispensabile: router e membri si collegano tra loro come client.
+basicConstraints=CA:FALSE
+keyUsage=digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth,clientAuth
+subjectAltName=DNS:<FQDN>,DNS:localhost,DNS:mongo-router,DNS:mongo-cfg1,DNS:mongo-cfg2,DNS:mongo-cfg3,DNS:mongo-sh1a,DNS:mongo-sh1b,DNS:mongo-sh1c,DNS:mongo-sh2a,DNS:mongo-sh2b,DNS:mongo-sh2c,IP:127.0.0.1,IP:<IP_PRIVATO_VM>

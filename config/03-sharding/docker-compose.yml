@@ -1,0 +1,131 @@
+# Cluster con sharding di laboratorio (guida 03), fase iniziale senza TLS.
+# Sostituire <IP_PRIVATO_VM>. Sulla VM: ~/mongo-lab/03-sharding/docker-compose.yml
+# Versione con TLS: docker-compose-tls.yml
+name: mongo-lab-sh
+
+x-mongod: &mongod
+  image: mongo:8.0
+  restart: unless-stopped
+  stop_grace_period: 1m
+  mem_limit: 640m
+  ulimits:
+    nofile:
+      soft: 64000
+      hard: 64000
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "3"
+
+services:
+  mongo-cfg1:
+    <<: *mongod
+    container_name: mongo-cfg1
+    hostname: mongo-cfg1
+    command: ["mongod", "--configsvr", "--replSet", "cfgrs", "--port", "27201", "--keyFile", "/etc/mongo/keyfile", "--wiredTigerCacheSizeGB", "0.25", "--bind_ip_all"]
+    volumes:
+      - cfg1-data:/data/configdb
+      - ./keyfile:/etc/mongo/keyfile:ro
+
+  mongo-cfg2:
+    <<: *mongod
+    container_name: mongo-cfg2
+    hostname: mongo-cfg2
+    command: ["mongod", "--configsvr", "--replSet", "cfgrs", "--port", "27202", "--keyFile", "/etc/mongo/keyfile", "--wiredTigerCacheSizeGB", "0.25", "--bind_ip_all"]
+    volumes:
+      - cfg2-data:/data/configdb
+      - ./keyfile:/etc/mongo/keyfile:ro
+
+  mongo-cfg3:
+    <<: *mongod
+    container_name: mongo-cfg3
+    hostname: mongo-cfg3
+    command: ["mongod", "--configsvr", "--replSet", "cfgrs", "--port", "27203", "--keyFile", "/etc/mongo/keyfile", "--wiredTigerCacheSizeGB", "0.25", "--bind_ip_all"]
+    volumes:
+      - cfg3-data:/data/configdb
+      - ./keyfile:/etc/mongo/keyfile:ro
+
+  mongo-sh1a:
+    <<: *mongod
+    container_name: mongo-sh1a
+    hostname: mongo-sh1a
+    command: ["mongod", "--shardsvr", "--replSet", "sh1", "--port", "27211", "--keyFile", "/etc/mongo/keyfile", "--wiredTigerCacheSizeGB", "0.25", "--bind_ip_all"]
+    volumes:
+      - sh1a-data:/data/db
+      - ./keyfile:/etc/mongo/keyfile:ro
+
+  mongo-sh1b:
+    <<: *mongod
+    container_name: mongo-sh1b
+    hostname: mongo-sh1b
+    command: ["mongod", "--shardsvr", "--replSet", "sh1", "--port", "27212", "--keyFile", "/etc/mongo/keyfile", "--wiredTigerCacheSizeGB", "0.25", "--bind_ip_all"]
+    volumes:
+      - sh1b-data:/data/db
+      - ./keyfile:/etc/mongo/keyfile:ro
+
+  mongo-sh1c:
+    <<: *mongod
+    container_name: mongo-sh1c
+    hostname: mongo-sh1c
+    command: ["mongod", "--shardsvr", "--replSet", "sh1", "--port", "27213", "--keyFile", "/etc/mongo/keyfile", "--wiredTigerCacheSizeGB", "0.25", "--bind_ip_all"]
+    volumes:
+      - sh1c-data:/data/db
+      - ./keyfile:/etc/mongo/keyfile:ro
+
+  mongo-sh2a:
+    <<: *mongod
+    container_name: mongo-sh2a
+    hostname: mongo-sh2a
+    command: ["mongod", "--shardsvr", "--replSet", "sh2", "--port", "27221", "--keyFile", "/etc/mongo/keyfile", "--wiredTigerCacheSizeGB", "0.25", "--bind_ip_all"]
+    volumes:
+      - sh2a-data:/data/db
+      - ./keyfile:/etc/mongo/keyfile:ro
+
+  mongo-sh2b:
+    <<: *mongod
+    container_name: mongo-sh2b
+    hostname: mongo-sh2b
+    command: ["mongod", "--shardsvr", "--replSet", "sh2", "--port", "27222", "--keyFile", "/etc/mongo/keyfile", "--wiredTigerCacheSizeGB", "0.25", "--bind_ip_all"]
+    volumes:
+      - sh2b-data:/data/db
+      - ./keyfile:/etc/mongo/keyfile:ro
+
+  mongo-sh2c:
+    <<: *mongod
+    container_name: mongo-sh2c
+    hostname: mongo-sh2c
+    command: ["mongod", "--shardsvr", "--replSet", "sh2", "--port", "27223", "--keyFile", "/etc/mongo/keyfile", "--wiredTigerCacheSizeGB", "0.25", "--bind_ip_all"]
+    volumes:
+      - sh2c-data:/data/db
+      - ./keyfile:/etc/mongo/keyfile:ro
+
+  mongo-router:
+    image: mongo:8.0
+    container_name: mongo-router
+    hostname: mongo-router
+    restart: unless-stopped
+    stop_grace_period: 1m
+    mem_limit: 384m
+    user: "999:999"
+    command: ["mongos", "--configdb", "cfgrs/mongo-cfg1:27201,mongo-cfg2:27202,mongo-cfg3:27203", "--port", "27200", "--keyFile", "/etc/mongo/keyfile", "--bind_ip_all"]
+    ports:
+      - "127.0.0.1:27200:27200"
+      - "<IP_PRIVATO_VM>:27200:27200"
+    volumes:
+      - ./keyfile:/etc/mongo/keyfile:ro
+    depends_on:
+      - mongo-cfg1
+      - mongo-cfg2
+      - mongo-cfg3
+
+volumes:
+  cfg1-data:
+  cfg2-data:
+  cfg3-data:
+  sh1a-data:
+  sh1b-data:
+  sh1c-data:
+  sh2a-data:
+  sh2b-data:
+  sh2c-data:

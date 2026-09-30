@@ -144,7 +144,7 @@ rs.initiate({ _id: 'rs0', members: [
   { _id: 2, host: '$FQDN:27103' } ] })"
 ```
 
-Funzione di laboratorio (non per produzione: password visibile ai processi del container); `rs_eval 'js' [nodo]`:
+Funzione di laboratorio (non per produzione: password visibile ai processi del container); `rs_eval 'js' [nodo]`. Si perde a ogni riconnessione: conviene salvarla in un file e caricarla con `source` (anche da `~/.bashrc`), come nella guida 03:
 
 ```bash
 rs_eval() {

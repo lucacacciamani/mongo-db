@@ -2,7 +2,7 @@
 
 Questa legenda spiega **tutti i comandi e i simboli** usati nelle guide del progetto: cosa fanno, cosa significano le opzioni che usiamo, e un esempio preso dalle guide. Non serve leggerla tutta: tienila aperta accanto alla guida e consultala quando incontri qualcosa che non conosci.
 
-La colonna **Guide** indica dove compare il comando: `00` installazione, `01` TLS, `02` replica set.
+La colonna **Guide** indica dove compare il comando: `00` installazione, `01` TLS, `02` replica set, `03` sharding.
 
 ---
 
@@ -141,6 +141,11 @@ Tutto ciò che sta tra la prima riga e la riga `EOF` diventa l'input del comando
 | `read -r VAR` | Legge una riga dall'input e la mette in una variabile | Lettura della password dallo standard input |
 | `exit N` | Termina lo script con esito `N` | `exit $status` |
 | `sh -c '...'` | Esegue una riga di comandi in una nuova shell | `sudo sh -c 'rm -f /var/backups/.../*.gz'`, e dentro i container |
+| `source file` | Esegue un file **nella sessione corrente**: le funzioni e le variabili che definisce restano disponibili | `source funzioni-lab.sh` (03) |
+| `~/.bashrc` | File che bash esegue all'apertura di ogni sessione: una riga `source ...` aggiunta qui carica le funzioni a ogni accesso | `echo 'source ...' >> ~/.bashrc` (03) |
+| `trap 'comandi' EXIT` | Esegue i comandi quando lo script termina, **anche per un errore** | Riattivazione del bilanciatore nello script di backup (03) |
+| `set -- a b` | Assegna i valori ai parametri `$1`, `$2`… | `set -- $c` nei cicli sui nodi (03) |
+| `export VAR` | Rende la variabile visibile ai programmi avviati dopo (qui: `mongosh` legge la password da `process.env`) | Script di backup (03) |
 
 **Le prime righe degli script:**
 
@@ -179,6 +184,7 @@ Tutto ciò che sta tra la prima riga e la riga `EOF` diventa l'input del comando
 | `ln` | Crea un collegamento | Senza opzioni: *hard link* (lo stesso file visibile da due posizioni, nessuno spazio in più); `-f` sostituisce se esiste | `ln -f "$FILE" "$DEST/weekly/"` | 00 01 02 |
 | `cat` | Mostra il contenuto di un file (o lo passa a un altro comando) | | `sudo cat root_password.txt` | 00 01 02 |
 | `head` | Mostra le prime righe | `-N` le prime N righe | `sudo head -3 /usr/local/bin/mongo-backup.sh` | 00 01 02 |
+| `wc -l` | Conta le righe | | `docker compose config --services \| wc -l` | 03 |
 | `tail` | Mostra le ultime righe | `-N` le ultime N righe | `... \| tail -1` | 02 |
 | `nano` | Editor di testo nel terminale | **Ctrl+O** salva, **Ctrl+X** esce | `nano docker-compose.yml` | 00 |
 | `du` | Spazio occupato | `-s` totale; `-h` leggibile | `sudo du -sh /var/backups/mongodb` | 00 01 02 |
@@ -256,6 +262,10 @@ Ogni file ha un **proprietario**, un **gruppo** e dei **permessi**. In `ls -l` c
 | `ss -ltnp` | Porte in ascolto (`-l` in ascolto, `-t` TCP, `-n` numeri, `-p` programma) | `sudo ss -ltnp \| grep 27017` | 00 02 |
 | `curl` | Scarica un indirizzo web | `-f` errore se fallisce; `-s` silenzioso; `-S` mostra gli errori; `-L` segue i reindirizzamenti; `-o` salva in un file | 00 01 |
 | `grep -o avx /proc/cpuinfo` | Verifica il supporto AVX della CPU | | 00 |
+| `fallocate -l 4G /swapfile` | Crea un file della dimensione indicata, riservando lo spazio | Creazione dello swap | 03 |
+| `mkswap file` | Prepara un file (o una partizione) come area di swap | | 03 |
+| `swapon file` / `swapon --show` | Attiva lo swap / mostra quello attivo. Serve `sudo` anche solo per consultarlo: sta in `/usr/sbin`, fuori dal percorso degli utenti normali (altrimenti `command not found`) | `sudo swapon --show` | 03 |
+| `swapoff file` | Disattiva lo swap | Rimozione dello swap | 03 |
 | `cat /sys/kernel/mm/transparent_hugepage/enabled` | Impostazione THP attiva (quella tra `[ ]`) | | 00 |
 
 ---
@@ -364,9 +374,10 @@ Non sono comandi Linux, ma compaiono in quasi tutti i blocchi. Si eseguono dentr
 | Comando | Cosa fa | Opzioni usate |
 |---|---|---|
 | `mongosh` | Shell di MongoDB | `-u` utente; `-p` password (senza valore: la chiede); `--authenticationDatabase` dove è definito l'utente; `--port`; `--tls --tlsCAFile` connessione cifrata; `--eval 'js'` esegue un comando ed esce; `--quiet` meno messaggi; oppure una stringa `"mongodb://..."` |
-| `mongodump` | Backup | `--archive` un unico file; `--gzip` compresso; `--oplog` copia coerente (replica set); `--config` file con la password; `--ssl --sslCAFile` TLS |
-| `mongorestore` | Ripristino | `--drop` sostituisce le collezioni; `--oplogReplay` riapplica l'oplog; stesse opzioni di `mongodump` |
+| `mongodump` | Backup | `--archive` un unico file; `--gzip` compresso; `--oplog` copia coerente (replica set, non attraverso il router); `--config` file con la password; `--ssl --sslCAFile` TLS; `--db` un solo database; `--dumpDbUsersAndRoles` anche gli utenti del database |
+| `mongorestore` | Ripristino | `--drop` sostituisce le collezioni; `--oplogReplay` riapplica l'oplog; `--nsFrom`/`--nsTo` ripristina con un altro nome; `--restoreDbUsersAndRoles` ripristina gli utenti; stesse opzioni di `mongodump` |
 | `mongod --version` | Versione del server | |
+| `mongos --configdb rs/host:porta,...` | Router di un cluster con sharding (03) | `--port`, `--keyFile`, opzioni TLS come `mongod` |
 
 Dentro `mongosh`, i comandi usati nelle guide:
 
@@ -380,6 +391,13 @@ Dentro `mongosh`, i comandi usati nelle guide:
 | `db.hello()` | Informazioni sul ruolo del nodo (primario, membri) |
 | `db.adminCommand({ getParameter / setParameter ... })` | Legge / cambia un parametro del server (es. `tlsMode`) |
 | `db.serverStatus().transportSecurity` | Connessioni cifrate ricevute, per versione TLS |
+| `sh.addShard("rs/host:porta,...")` | Registra uno shard nel cluster (03) |
+| `sh.status()` / `db.adminCommand({ listShards: 1 })` | Stato del cluster / elenco degli shard (solo sul router) |
+| `sh.enableSharding("db")` / `sh.shardCollection("db.coll", { campo: "hashed" o 1 })` | Abilita un database / distribuisce una collezione con la shard key indicata |
+| `db.coll.getShardDistribution()` | Dati e documenti per shard (include gli orfani) |
+| `.explain()` → `queryPlanner.winningPlan.stage` | `SINGLE_SHARD` (query mirata) o `SHARD_MERGE` (tutti gli shard) |
+| `sh.stopBalancer()` / `sh.startBalancer()` / `sh.getBalancerState()` / `sh.isBalancerRunning()` | Ferma / riattiva / stato del bilanciatore |
+| `config.chunks`, `config.changelog`, `config.rangeDeletions`, `config.settings` | Intervalli, storico delle migrazioni, cancellazioni degli orfani in attesa, impostazioni (`chunksize`) |
 | `db.getMongo().setReadPref("secondary")` | Legge dai secondari |
 | `exit` | Esce da `mongosh` |
 

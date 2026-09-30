@@ -1,0 +1,10 @@
+# Installazione: /etc/systemd/system/mongo-sh-backup.timer (03:30 UTC)
+[Unit]
+Description=Backup notturno MongoDB cluster con sharding di laboratorio
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
