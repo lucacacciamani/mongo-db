@@ -69,7 +69,33 @@ Un replica set (guida 02) **copia** gli stessi dati su più server: protegge dai
 
 **Ogni shard e i config server sono replica set:** tutto ciò che hai visto nella guida 02 (elezioni, failover, keyFile) vale per ciascuno di loro.
 
-### 0.3 Shard key e chunk
+### 0.3 Replica e sharding: cosa li distingue e come si combinano
+
+Sono due meccanismi diversi, che risolvono problemi diversi:
+
+- **la replica** tiene **più copie degli stessi dati** su server diversi: serve a non perdere servizio e dati quando un server si guasta. Ogni copia contiene **tutto**;
+- **lo sharding** **divide i dati** tra gruppi di server diversi: serve quando i dati o le scritture sono troppi per un solo server. Ogni gruppo contiene **solo una parte**.
+
+Un'immagine utile è un'enciclopedia: la replica è fare fotocopie dell'intera opera e metterle in stanze diverse, così se una stanza allaga le altre copie ci sono ancora; lo sharding è dividere i volumi tra più scaffali, perché in uno solo non ci stanno. In questa guida facciamo entrambe le cose: dividiamo i volumi tra gli scaffali, e di ogni scaffale teniamo tre copie.
+
+**Lo sharding "contiene" la replica?** Strutturalmente sì: nelle versioni moderne di MongoDB ogni shard **deve** essere un replica set, e lo sono anche i config server. La replica avviene **dentro ogni shard, separatamente**: i nodi dello shard 1 si copiano i dati dello shard 1, quelli dello shard 2 i dati dello shard 2; tra shard diversi non si copia nulla, perché hanno dati diversi.
+
+Ma un replica set può avere anche **un solo membro**: in quel caso la struttura c'è, le copie no. Se quel server si guasta, la parte di dati che conteneva diventa irraggiungibile, e con essa ogni query che ne ha bisogno.
+
+| Configurazione | Resiste al guasto di un server? | Regge più dati di un server? |
+|---|---|---|
+| Replica set da 3 nodi (guida 02) | Sì | No: ogni nodo ha tutti i dati |
+| Sharding con shard da 1 nodo | **No**: ogni guasto rende irraggiungibile una parte dei dati | Sì |
+| Sharding con shard da 3 nodi (questa guida) | Sì, un nodo per shard | Sì |
+
+Due dettagli completano il quadro:
+
+- **il router non è replicato**: con un solo router, se si ferma le applicazioni non raggiungono il cluster, anche se tutti i dati sono al sicuro. In produzione se ne usano almeno due;
+- **le due tecniche non si sostituiscono**: la replica non aiuta quando i dati crescono troppo, e lo sharding senza replica è più fragile di un singolo server, perché aumenta il numero di macchine che, guastandosi, bloccano una parte dei dati.
+
+Nella Parte 12 lo vedrai in pratica: spegnendo il primario di uno shard, la replica interna a quello shard elegge un nuovo primario, e il router continua a funzionare.
+
+### 0.4 Shard key e chunk
 
 Per decidere dove va ogni documento, MongoDB usa un campo scelto per ogni collezione: la **shard key**. I valori della shard key sono divisi in **intervalli**, detti **chunk**, e ogni intervallo è assegnato a uno shard.
 
@@ -82,15 +108,15 @@ Lo vedremo concretamente nelle Parti 8–10.
 
 > **Un chiarimento sui chunk.** È facile immaginarli come "contenitori" di dimensione fissa. Nelle versioni recenti di MongoDB è più corretto pensarli come **intervalli di valori assegnati a uno shard**: non vengono più divisi automaticamente man mano che crescono, il bilanciatore li divide quando deve spostare dati, e un meccanismo automatico riunisce gli intervalli contigui dello stesso shard. Il loro numero varia nel tempo e conta poco: conta **quanti dati** ha ogni shard.
 
-### 0.4 Il bilanciatore
+### 0.5 Il bilanciatore
 
 Un processo interno controlla continuamente se gli shard hanno quantità di dati simili. Se la differenza supera una soglia (circa tre volte la dimensione di riferimento dei chunk), sposta intervalli dallo shard più pieno a quello più vuoto: è una **migrazione**. Dopo la migrazione, lo shard di origine non cancella subito i documenti spostati: li tiene per un po' come **documenti orfani** (Parte 10).
 
-### 0.5 Query mirate e query su tutti gli shard
+### 0.6 Query mirate e query su tutti gli shard
 
 Il router guarda la query: se contiene la shard key, sa su quale shard stanno i dati e interroga **solo quello** (*query mirata*). Se non la contiene, deve interrogare **tutti** gli shard e unire i risultati (*scatter-gather*). Con due shard la differenza è piccola; con cinquanta shard, ogni query senza shard key coinvolge tutto il cluster. **La shard key si sceglie guardando le query più frequenti dell'applicazione.**
 
-### 0.6 Quando serve davvero
+### 0.7 Quando serve davvero
 
 Lo sharding ha un costo alto: in produzione servono una decina di server, e backup, monitoraggio e manutenzione diventano più complessi. Si adotta quando un singolo replica set, ben dimensionato, non basta più. Prima di arrivarci conviene valutare un server più grande, indici migliori, o un servizio gestito.
 
@@ -638,7 +664,7 @@ sh_eval 'db.getSiblingDB("labdb").ordini.getShardDistribution()'
 
 ✅ Nel collaudo **50,5% / 49,5%** (101.000 e 99.000 documenti): l'hash sparge i clienti in modo uniforme.
 
-Noterai **un solo chunk per shard**, da circa 13 MB, nonostante la dimensione di riferimento di 1 MB. Non è un errore: una collezione hashed nasce già divisa in un intervallo per shard, e il bilanciatore non divide ciò che è già bilanciato. Vedi il chiarimento in Parte 0.3.
+Noterai **un solo chunk per shard**, da circa 13 MB, nonostante la dimensione di riferimento di 1 MB. Non è un errore: una collezione hashed nasce già divisa in un intervallo per shard, e il bilanciatore non divide ciò che è già bilanciato. Vedi il chiarimento in Parte 0.4.
 
 ---
 
@@ -1184,7 +1210,7 @@ Poi, a scelta: la cartella `~/mongo-lab/03-sharding`, i backup in `/var/backups/
 | `sh_eval: command not found` | Nuova sessione | `source funzioni-lab.sh` (o riga in `~/.bashrc`) |
 | `sh.status()` fallisce | Collegato a un nodo invece che al router | Usa `sh_eval` |
 | Totali di `getShardDistribution` più alti dei documenti reali | Documenti orfani dopo una migrazione | Normale per ~15 minuti; il router li filtra (Parte 10.1) |
-| Un solo chunk per shard nonostante `chunksize` piccolo | Nessuna divisione automatica: collezione già bilanciata | Normale (Parte 0.3) |
+| Un solo chunk per shard nonostante `chunksize` piccolo | Nessuna divisione automatica: collezione già bilanciata | Normale (Parte 0.4) |
 | Il bilanciatore non sposta nulla | Differenza di dati sotto la soglia (~3 × chunk size) | Normale; controlla `changelog` |
 | Scritture concentrate su uno shard | Shard key crescente a intervalli | Scegliere una chiave hashed o composta (Parte 10.3) |
 | VS Code non mostra i database | Connessione rimasta indietro | *Refresh* o riconnessione |
