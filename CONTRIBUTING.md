@@ -30,3 +30,7 @@ any
 
 Passwords, private keys (`*.key`, `*.pem`), certificates and backups must never end up in the repository.
 Check your diff before committing. If a secret gets pushed by mistake, rotate it immediately and open an issue.
+
+## Code of conduct
+
+By participating in this project you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
