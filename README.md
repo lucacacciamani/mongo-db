@@ -39,7 +39,7 @@ Le guide sono numerate nell'ordine in cui vanno seguite. Ogni argomento ha due v
 
 Per tutte le guide vale la **[legenda dei comandi](docs/legenda-comandi-linux.md)**: spiega ogni comando Linux, simbolo della shell, comando Docker, MongoDB e PowerShell usato nel progetto, con esempi presi dalle guide.
 
-La guida 01 presuppone di aver completato la 00; la 02 presuppone la 00 e la 01 (riusa la CA per il TLS); la 03 presuppone la 00 e la 01, e la 02 è consigliata. Gli appunti di laboratorio ([02](docs/02-replica-set-appunti.md), [03](docs/03-sharding-appunti.md)) raccolgono il diario delle prove, delle scelte e degli inconvenienti da cui sono nate le guide; la [procedura di laboratorio della 03](docs/03-sharding-procedura-laboratorio.md) è la bozza usata per il collaudo.
+La guida 01 presuppone di aver completato la 00; la 02 presuppone la 00 e la 01 (riusa la CA per il TLS); la 03 presuppone la 00 e la 01, e la 02 è consigliata.
 
 ### Il percorso
 
@@ -71,11 +71,8 @@ flowchart LR
 │   ├── 01-tls-guida-rapida.md
 │   ├── 02-replica-set-guida-completa.md
 │   ├── 02-replica-set-guida-rapida.md
-│   ├── 02-replica-set-appunti.md     (diario del laboratorio)
 │   ├── 03-sharding-guida-completa.md
 │   ├── 03-sharding-guida-rapida.md
-│   ├── 03-sharding-appunti.md        (diario del laboratorio)
-│   ├── 03-sharding-procedura-laboratorio.md (bozza usata per il collaudo)
 │   └── legenda-comandi-linux.md      (legenda dei comandi, valida per tutte le guide)
 └── config/
     ├── 00-base/                      Risorse della guida 00 (senza TLS)
