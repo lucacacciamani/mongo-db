@@ -645,9 +645,9 @@ $ sudo /usr/local/bin/mongo-backup.sh
 Backup completato: /var/backups/mongodb/daily/mongo-20260928-134803.archive.gz (4.0K)
 
 $ sudo journalctl -u mongo-backup.service -n 5 --no-pager
-Sep 28 13:48:08 azmdb01 systemd[1]: Starting mongo-backup.service - Backup MongoDB...
-Sep 28 13:48:09 azmdb01 mongo-backup.sh[2405]: Backup completato: /var/backups/mongodb/daily/mongo-20260928-134809.archive.gz (4.0K)
-Sep 28 13:48:09 azmdb01 systemd[1]: Finished mongo-backup.service - Backup MongoDB.
+Sep 28 13:48:08 mongo-vm systemd[1]: Starting mongo-backup.service - Backup MongoDB...
+Sep 28 13:48:09 mongo-vm mongo-backup.sh[2405]: Backup completato: /var/backups/mongodb/daily/mongo-20260928-134809.archive.gz (4.0K)
+Sep 28 13:48:09 mongo-vm systemd[1]: Finished mongo-backup.service - Backup MongoDB.
 ```
 
 </details>
