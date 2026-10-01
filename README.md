@@ -154,4 +154,4 @@ Le parti non ancora collaudate sono segnalate nelle guide con il simbolo 🧪. S
 
 ## Licenza
 
-Da definire.
+Distribuito con licenza [MIT](LICENSE). © 2026 Luca Cacciamani.
