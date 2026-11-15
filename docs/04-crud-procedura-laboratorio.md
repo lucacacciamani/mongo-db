@@ -489,3 +489,299 @@ Write Errors: [
 **Nota dal collaudo:** rilanciando l'`insertMany` non ordinato della 3.3 con i documenti già presenti si ottengono **tre** `WriteError` (`index` 0, 1 e 2) e `insertedCount: 0`: il non ordinato tenta comunque tutti i documenti.
 
 ---
+
+
+# Blocco B
+
+## Parte 4 — Read
+
+```bash
+source ~/mongo-lab/04-crud/funzioni-crud.sh     # se hai riaperto la sessione SSH
+app_shell
+```
+
+### 4.1 Uguaglianza, dot notation, proiezione
+
+```js
+db.clienti.find({ "indirizzo.citta": "Milano" }, { _id: 0, nome: 1, cognome: 1 })
+db.clienti.findOne({ _id: 7 })
+db.clienti.findOne({ _id: 7 }, { email: 1, "indirizzo.citta": 1 })
+db.clienti.findOne({ _id: 7 }, { interessi: 0, indirizzo: 0 })
+```
+
+✅ **12** clienti di Milano. La proiezione con `1` include i campi (più `_id`, salvo `_id: 0`); quella con `0` li esclude.
+
+### 4.2 Confronto e operatori logici
+
+```js
+db.clienti.find({ punti: { $gte: 400 } }, { nome: 1, punti: 1 }).sort({ punti: -1 })
+db.clienti.countDocuments({ tipo: "azienda", newsletter: true })
+db.clienti.countDocuments({ $or: [ { "indirizzo.citta": "Roma" }, { punti: { $lt: 20 } } ] })
+db.clienti.countDocuments({ "indirizzo.provincia": { $in: ["TO", "VE"] } })
+db.clienti.countDocuments({ telefono: { $exists: false } })
+db.clienti.countDocuments({ iscritto: { $type: "date" } })
+db.clienti.find({ email: { $regex: /^giulia\./ } }, { _id: 0, email: 1 })
+db.prodotti.find({ prezzo: { $gt: 200 } }, { nome: 1, prezzo: 1 }).sort({ prezzo: -1 })
+db.prodotti.find({ categoria: { $ne: "Libri" }, tags: "ufficio" }, { nome: 1 })
+```
+
+✅ Nell'ordine: **13** clienti con almeno 400 punti (il primo `_id: 19` con 490); **7**; **6** (Anna ha 0 punti); **14**; **15** senza telefono (anche Anna); **51** (tutti: anche Anna ha `iscritto` di tipo data); **4** email `giulia.…`; **5** prodotti sopra 200 € (P001, P004, P012, P023, P029: il confronto tra `200`, un numero intero, e i prezzi `Decimal128` funziona, perché MongoDB confronta i numeri per valore anche se di tipo diverso); **5** prodotti con tag `ufficio` (P001, P004, P011, P029, P030).
+
+### 4.3 Array
+
+```js
+db.clienti.countDocuments({ interessi: "montagna" })
+db.clienti.find({ interessi: { $all: ["sport", "viaggi"] } }, { _id: 1, interessi: 1 })
+db.clienti.countDocuments({ interessi: { $size: 3 } })
+db.vendite.countDocuments({ "righe.prodottoId": "P001", "righe.qta": { $gte: 2 } })
+db.vendite.countDocuments({ righe: { $elemMatch: { prodottoId: "P001", qta: { $gte: 2 } } } })
+db.vendite.findOne({ righe: { $elemMatch: { prodottoId: "P001", qta: { $gte: 2 } } } }, { _id: 0, clienteId: 1, righe: 1 })
+```
+
+✅ **12**; **6** clienti (9, 11, 16, 17, 42, 44); **29**; **278** contro **208**. Senza `$elemMatch` basta che **una** riga sia P001 e **una qualsiasi** abbia `qta ≥ 2`; con `$elemMatch` le due condizioni devono valere per **la stessa** riga.
+
+### 4.4 Ordinamento, paginazione, conteggi, `distinct`
+
+```js
+db.prodotti.find({}, { nome: 1 }).sort({ _id: 1 }).skip(10).limit(5)
+db.prodotti.find({ _id: { $gt: "P015" } }, { nome: 1 }).sort({ _id: 1 }).limit(5)
+db.vendite.estimatedDocumentCount()
+db.vendite.countDocuments()
+db.vendite.countDocuments({ data: { $gte: ISODate("2026-03-01"), $lt: ISODate("2026-04-01") } })
+db.clienti.distinct("indirizzo.citta")
+db.vendite.distinct("stato")
+```
+
+✅ P011–P015; P016–P020 (paginazione «per chiave»: riparte dall'ultimo `_id` visto invece di saltare documenti); **5000** e **5000**; **496** vendite a marzo; 9 città (le 8 dei dati più `Genova`); 4 stati.
+
+### 4.5 Cursori
+
+```js
+const cur = db.vendite.find({ clienteId: 7 }, { _id: 0, data: 1, totale: 1 }).sort({ data: 1 })
+cur.hasNext()
+cur.next()
+cur.toArray().length
+let somma = 0; db.vendite.find({ clienteId: 7 }).forEach(v => { somma += 1 }); somma
+```
+
+✅ `true`, la prima vendita del cliente 7, poi **92** (le restanti: in tutto sono **93**), infine **93**.
+
+### 4.6 Query mirate e su tutti gli shard
+
+```js
+db.vendite.find({ clienteId: 7 }).explain().queryPlanner.winningPlan.stage
+db.vendite.find({ stato: "annullata" }).explain().queryPlanner.winningPlan.stage
+db.vendite.find().sort({ data: -1 }).limit(5).explain().queryPlanner.winningPlan.stage
+db.clienti.find({ _id: 7 }).explain().queryPlanner.winningPlan.stage
+exit
+```
+
+✅ `SINGLE_SHARD` (contiene la shard key), `SHARD_MERGE` (tutti gli shard), `SHARD_MERGE_SORT` (tutti gli shard, ordinati e fusi dal router), `SINGLE_SHARD` (collezione non distribuita: vive sullo shard primario).
+
+📋 **Output di tutta la Parte 4.**
+
+```bash
+azureuserdgs@azmdb01:~$ source ~/mongo-lab/04-crud/funzioni-crud.sh
+azureuserdgs@azmdb01:~$ app_shell
+Current Mongosh Log ID: 6af9a7f9427febc77f4f4bf5
+Connecting to:          mongodb://<credentials>@127.0.0.1:27200/labdb?directConnection=true&serverSelectionTimeoutMS=2000&tls=true&tlsCAFile=%2Fetc%2Fmongo%2Ftls%2Fca.pem&authSource=labdb&appName=mongosh+2.11.1
+Using MongoDB:          8.0.32
+Using Mongosh:          2.11.1
+
+For mongosh info see: https://www.mongodb.com/docs/mongodb-shell/
+
+[direct: mongos] labdb> db.clienti.find({ "indirizzo.citta": "Milano" }, { _id: 0, nome: 1, cognomcognome: 1 })
+[
+  { nome: 'Elena', cognome: 'Esposito' },
+  { nome: 'Matteo', cognome: 'Gallo' },
+  { nome: 'Paolo', cognome: 'Bruno' },
+  { nome: 'Matteo', cognome: 'Esposito' },
+  { nome: 'Francesca', cognome: 'Marino' },
+  { nome: 'Sara', cognome: 'Colombo' },
+  { nome: 'Andrea', cognome: 'Ricci' },
+  { nome: 'Luca', cognome: 'Colombo' },
+  { nome: 'Luca', cognome: 'Bruno' },
+  { nome: 'Luca', cognome: 'Ricci' },
+  { nome: 'Luca', cognome: 'Bruno' },
+  { nome: 'Francesca', cognome: 'Ricci' }
+]
+[direct: mongos] labdb> db.clienti.findOne({ _id: 7 })
+{
+  _id: 7,
+  nome: 'Matteo',
+  cognome: 'Gallo',
+  email: 'matteo.gallo7@esempio.it',
+  tipo: 'privato',
+  indirizzo: { citta: 'Milano', provincia: 'MI', cap: '20121' },
+  interessi: [ 'sport', 'cucina', 'lettura' ],
+  punti: 108,
+  newsletter: false,
+  iscritto: ISODate('2025-06-06T00:00:00.000Z')
+}
+[direct: mongos] labdb> db.clienti.findOne({ _id: 7 }, { email: 1, "indirizzo.citta": 1 })
+{
+  _id: 7,
+  email: 'matteo.gallo7@esempio.it',
+  indirizzo: { citta: 'Milano' }
+}
+[direct: mongos] labdb> db.clienti.findOne({ _id: 7 }, { interessi: 0, indirizzo: 0 })
+{
+  _id: 7,
+  nome: 'Matteo',
+  cognome: 'Gallo',
+  email: 'matteo.gallo7@esempio.it',
+  tipo: 'privato',
+  punti: 108,
+  newsletter: false,
+  iscritto: ISODate('2025-06-06T00:00:00.000Z')
+}
+[direct: mongos] labdb>
+
+[direct: mongos] labdb> db.clienti.find({ punti: { $gte: 400 } }, { nome: 1, punti: 1 }).sort({ pupunti: -1 })
+[
+  { _id: 19, nome: 'Chiara', punti: 490 },
+  { _id: 12, nome: 'Sara', punti: 486 },
+  { _id: 16, nome: 'Matteo', punti: 479 },
+  { _id: 48, nome: 'Francesca', punti: 479 },
+  { _id: 32, nome: 'Luca', punti: 467 },
+  { _id: 45, nome: 'Andrea', punti: 454 },
+  { _id: 26, nome: 'Chiara', punti: 442 },
+  { _id: 34, nome: 'Chiara', punti: 435 },
+  { _id: 43, nome: 'Paolo', punti: 409 },
+  { _id: 24, nome: 'Giulia', punti: 406 },
+  { _id: 8, nome: 'Paolo', punti: 405 },
+  { _id: 13, nome: 'Matteo', punti: 404 },
+  { _id: 25, nome: 'Luca', punti: 403 }
+]
+[direct: mongos] labdb> db.clienti.countDocuments({ tipo: "azienda", newsletter: true })
+7
+[direct: mongos] labdb> db.clienti.countDocuments({ $or: [ { "indirizzo.citta": "Roma" }, { punti: { $lt: 20 } } ] })
+6
+[direct: mongos] labdb> db.clienti.countDocuments({ "indirizzo.provincia": { $in: ["TO", "VE"] } })
+14
+[direct: mongos] labdb> db.clienti.countDocuments({ telefono: { $exists: false } })
+15
+[direct: mongos] labdb> db.clienti.countDocuments({ iscritto: { $type: "date" } })
+51
+[direct: mongos] labdb> db.clienti.find({ email: { $regex: /^giulia\./ } }, { _id: 0, email: 1 })
+[
+  { email: 'giulia.esposito2@esempio.it' },
+  { email: 'giulia.bruno20@esempio.it' },
+  { email: 'giulia.bianchi24@esempio.it' },
+  { email: 'giulia.romano40@esempio.it' }
+]
+[direct: mongos] labdb> db.prodotti.find({ prezzo: { $gt: 200 } }, { nome: 1, prezzo: 1 }).sort({ prezzo: -1 })
+[
+  {
+    _id: 'P001',
+    nome: 'Portatile 14 pollici',
+    prezzo: Decimal128('899.00')
+  },
+  {
+    _id: 'P023',
+    nome: 'Bicicletta da città',
+    prezzo: Decimal128('399.00')
+  },
+  {
+    _id: 'P012',
+    nome: 'Aspirapolvere robot',
+    prezzo: Decimal128('299.00')
+  },
+  {
+    _id: 'P004',
+    nome: 'Monitor 27 pollici',
+    prezzo: Decimal128('249.00')
+  },
+  { _id: 'P029', nome: 'Sedia ergonomica', prezzo: Decimal128('219.00') }
+]
+[direct: mongos] labdb> db.prodotti.find({ categoria: { $ne: "Libri" }, tags: "ufficio" }, { nome: 1 })
+[
+  { _id: 'P001', nome: 'Portatile 14 pollici' },
+  { _id: 'P004', nome: 'Monitor 27 pollici' },
+  { _id: 'P011', nome: 'Lampada da scrivania' },
+  { _id: 'P029', nome: 'Sedia ergonomica' },
+  { _id: 'P030', nome: 'Stampante laser' }
+]
+[direct: mongos] labdb> db.clienti.countDocuments({ interessi: "montagna" })
+12
+[direct: mongos] labdb> db.clienti.find({ interessi: { $all: ["sport", "viaggi"] } }, { _id: 1,intinteressi: 1 })
+[
+  { _id: 9, interessi: [ 'lettura', 'sport', 'viaggi' ] },
+  { _id: 11, interessi: [ 'sport', 'viaggi' ] },
+  { _id: 16, interessi: [ 'montagna', 'viaggi', 'sport' ] },
+  { _id: 17, interessi: [ 'viaggi', 'sport', 'informatica' ] },
+  { _id: 42, interessi: [ 'cucina', 'sport', 'viaggi' ] },
+  { _id: 44, interessi: [ 'sport', 'viaggi', 'lettura' ] }
+]
+[direct: mongos] labdb> db.clienti.countDocuments({ interessi: { $size: 3 } })
+29
+[direct: mongos] labdb> db.vendite.countDocuments({ "righe.prodottoId": "P001", "righe.qta": { $gt$gte: 2 } })
+278
+[direct: mongos] labdb> db.vendite.countDocuments({ righe: { $elemMatch: { prodottoId: "P001", qta: { $gte: 2 } } } })
+208
+[direct: mongos] labdb> db.vendite.findOne({ righe: { $elemMatch: { prodottoId: "P001", qta: { $gt$gte: 2 } } } }, { _id: 0, clienteId: 1, righe: 1 })
+{
+  clienteId: 4,
+  righe: [
+    { prodottoId: 'P001', qta: 3, prezzo: Decimal128('899.00') },
+    { prodottoId: 'P019', qta: 1, prezzo: Decimal128('19.00') }
+  ]
+}
+[direct: mongos] labdb> db.prodotti.find({}, { nome: 1 }).sort({ _id: 1 }).skip(10).limit(5)
+[
+  { _id: 'P011', nome: 'Lampada da scrivania' },
+  { _id: 'P012', nome: 'Aspirapolvere robot' },
+  { _id: 'P013', nome: 'Set di pentole' },
+  { _id: 'P014', nome: "Purificatore d'aria" },
+  { _id: 'P015', nome: 'Il nome della rosa' }
+]
+[direct: mongos] labdb> db.prodotti.find({ _id: { $gt: "P015" } }, { nome: 1 }).sort({ _id: 1 }).limit(5)
+[
+  { _id: 'P016', nome: 'I promessi sposi' },
+  { _id: 'P017', nome: 'Imparare MongoDB' },
+  { _id: 'P018', nome: 'Cucina regionale' },
+  { _id: 'P019', nome: 'Guida alle Dolomiti' },
+  { _id: 'P020', nome: 'Atlante del cielo' }
+]
+[direct: mongos] labdb> db.vendite.estimatedDocumentCount()
+5000
+[direct: mongos] labdb> db.vendite.countDocuments()
+5000
+[direct: mongos] labdb> db.vendite.countDocuments({ data: { $gte: ISODate("2026-03-01"), $lt: ISODate("2026-04-01") } })
+496
+[direct: mongos] labdb> db.clienti.distinct("indirizzo.citta")
+[
+  'Bari',    'Bologna',
+  'Firenze', 'Genova',
+  'Milano',  'Napoli',
+  'Roma',    'Torino',
+  'Venezia'
+]
+[direct: mongos] labdb> db.vendite.distinct("stato")
+[ 'annullata', 'consegnata', 'in lavorazione', 'spedita' ]
+[direct: mongos] labdb> const cur = db.vendite.find({ clienteId: 7 }, { _id: 0, data: 1, totale: 1 }).sort({ data: 1 })
+
+[direct: mongos] labdb> cur.hasNext()
+true
+[direct: mongos] labdb> cur.next()
+{
+  data: ISODate('2026-01-02T12:00:00.000Z'),
+  totale: Decimal128('19.90')
+}
+[direct: mongos] labdb> cur.toArray().length
+92
+[direct: mongos] labdb> let somma = 0; db.vendite.find({ clienteId: 7 }).forEach(v => { somma += 1 }); somma
+93
+[direct: mongos] labdb> db.vendite.find({ clienteId: 7 }).explain().queryPlanner.winningPlan.stage
+SINGLE_SHARD
+[direct: mongos] labdb> db.vendite.find({ stato: "annullata" }).explain().queryPlanner.winningPlan.stage
+SHARD_MERGE
+[direct: mongos] labdb> db.vendite.find().sort({ data: -1 }).limit(5).explain().queryPlanner.winningPlan.stage
+SHARD_MERGE_SORT
+[direct: mongos] labdb> db.clienti.find({ _id: 7 }).explain().queryPlanner.winningPlan.stage
+SINGLE_SHARD
+[direct: mongos] labdb>
+
+```
+
+---
