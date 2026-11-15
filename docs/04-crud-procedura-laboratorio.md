@@ -785,3 +785,311 @@ SINGLE_SHARD
 ```
 
 ---
+
+# Blocco C
+
+## Parte 5 — Update
+
+```bash
+source ~/mongo-lab/04-crud/funzioni-crud.sh     # se hai riaperto la sessione SSH
+app_shell
+```
+
+### 5.1 Operatori di campo
+
+```js
+db.clienti.updateOne({ _id: 51 }, { $set: { telefono: "+39 3331234567", "indirizzo.cap": "16122" } })
+db.clienti.updateOne({ _id: 51 }, { $set: { telefono: "+39 3331234567", "indirizzo.cap": "16122" } })
+db.clienti.updateOne({ _id: 51 }, { $inc: { punti: 50 }, $currentDate: { aggiornato: true } })
+db.clienti.updateOne({ _id: 51 }, { $unset: { newsletter: "" }, $rename: { telefono: "cellulare" } })
+db.clienti.findOne({ _id: 51 })
+```
+
+✅ Primo: `matchedCount: 1, modifiedCount: 1`. Secondo, identico: `matchedCount: 1, modifiedCount: 0` (i valori erano già quelli). Alla fine Anna ha `punti: 50`, `aggiornato` con la data attuale, `cellulare` al posto di `telefono`, nessun `newsletter`, cap `16122`.
+
+### 5.2 Operatori sugli array
+
+```js
+db.clienti.updateOne({ _id: 51 }, { $push: { interessi: "viaggi" } })
+db.clienti.updateOne({ _id: 51 }, { $addToSet: { interessi: "viaggi" } })
+db.clienti.updateOne({ _id: 51 }, { $push: { interessi: { $each: ["cucina", "lettura"] } } })
+db.clienti.updateOne({ _id: 51 }, { $pull: { interessi: "musica" } })
+db.clienti.findOne({ _id: 51 }, { interessi: 1 })
+```
+
+✅ `$addToSet` con un valore già presente: `modifiedCount: 0`. Alla fine: `[ 'viaggi', 'cucina', 'lettura' ]`.
+
+### 5.3 `updateMany`, update con pipeline, `upsert`
+
+```js
+db.prodotti.updateMany({ giacenza: 0 }, { $set: { disponibile: false } })
+db.prodotti.updateMany({ categoria: "Libri" }, [ { $set: { prezzo: { $round: [ { $multiply: ["$prezzo", NumberDecimal("0.9")] }, 2 ] } } } ])
+db.prodotti.find({ categoria: "Libri" }, { prezzo: 1 })
+db.prodotti.updateOne({ _id: "P099" }, { $set: { nome: "Prodotto di prova", categoria: "Prove" }, $setOnInsert: { giacenza: 0, creato: new Date() } }, { upsert: true })
+db.prodotti.updateOne({ _id: "P099" }, { $set: { nome: "Prodotto di prova", categoria: "Prove" }, $setOnInsert: { giacenza: 0, creato: new Date() } }, { upsert: true })
+```
+
+✅ **3** prodotti esauriti (P007, P014, P026). Libri scontati del 10%: 12.60, 10.80, 35.10, 22.50, 17.10, 26.10 (annota com'è scritto il valore, ad esempio `Decimal128('12.60')` oppure `'12.600'`). Primo upsert: `upsertedId: 'P099'`; secondo: `matchedCount: 1, modifiedCount: 0, upsertedCount: 0`.
+
+### 5.4 Elementi di un array: `$` e `arrayFilters`
+
+```js
+db.vendite.countDocuments({ clienteId: 7, "righe.prodottoId": "P002" })
+db.vendite.updateMany({ clienteId: 7, "righe.prodottoId": "P002" }, { $set: { "righe.$[r].sconto": NumberDecimal("2.00") } }, { arrayFilters: [ { "r.prodottoId": "P002" } ] })
+db.vendite.findOne({ clienteId: 7, "righe.sconto": { $exists: true } }, { _id: 0, righe: 1 })
+const v7 = db.vendite.findOne({ clienteId: 7, "righe.prodottoId": "P002" })
+db.vendite.updateOne({ _id: v7._id, clienteId: 7, "righe.prodottoId": "P002" }, { $inc: { "righe.$.qta": 1 } })
+db.vendite.findOne({ _id: v7._id }, { _id: 0, righe: 1 })
+```
+
+✅ **13** vendite; `updateMany`: `matchedCount: 13, modifiedCount: 13`; lo sconto compare solo nelle righe di P002. `$` aggiorna **la prima** riga che corrisponde al filtro: la `qta` di P002 aumenta di 1.
+
+### 5.5 `replaceOne` e `findOneAndUpdate`
+
+```js
+db.prove.replaceOne({ _id: 1 }, { testo: "documento sostituito" })
+db.prove.findOne({ _id: 1 })
+db.prodotti.findOneAndUpdate({ _id: "P002" }, { $inc: { giacenza: -1 } }, { projection: { giacenza: 1 } })
+db.prodotti.findOneAndUpdate({ _id: "P002" }, { $inc: { giacenza: -1 } }, { projection: { giacenza: 1 }, returnDocument: "after" })
+```
+
+✅ Dopo `replaceOne` il documento ha solo `_id` e `testo`. `findOneAndUpdate` restituisce il documento **prima** della modifica (`giacenza: 140`), oppure **dopo** con `returnDocument: "after"` (`giacenza: 138`).
+
+### 5.6 Update su una collezione distribuita
+
+```js
+db.vendite.updateOne({ stato: "annullata", canale: "telefono" }, { $set: { nota: "verificata" } })
+db.vendite.insertOne({ _id: "prova-sk", clienteId: 99, stato: "prova", totale: NumberDecimal("1.00") })
+db.vendite.updateOne({ _id: "prova-sk", clienteId: 99 }, { $set: { clienteId: 98 } })
+db.vendite.findOne({ _id: "prova-sk" })
+db.vendite.updateMany({ clienteId: 98 }, { $set: { clienteId: 97 } })
+```
+
+✅ (da verificare) Il primo funziona anche senza shard key nel filtro (consentito da MongoDB 7.1). Cambiare il **valore** della shard key con `updateOne` funziona (il documento può cambiare shard); con `updateMany` l'operazione viene rifiutata: `MongoServerError: Multi-update operations are not allowed when updating the shard key field.` (confermato). Annota i messaggi esatti degli altri comandi.
+
+📋 **Output della Parte 5.**
+
+```bash
+azureuserdgs@azmdb01:~$ source ~/mongo-lab/04-crud/funzioni-crud.sh
+azureuserdgs@azmdb01:~$ app_shell
+Current Mongosh Log ID: 6af9ba5cee5a2830d4c48f2f
+Connecting to:          mongodb://<credentials>@127.0.0.1:27200/labdb?directConnection=true&serverSelectionTimeoutMS=2000&tls=true&tlsCAFile=%2Fetc%2Fmongo%2Ftls%2Fca.pem&authSource=labdb&appName=mongosh+2.11.1
+Using MongoDB:          8.0.32
+Using Mongosh:          2.11.1
+
+For mongosh info see: https://www.mongodb.com/docs/mongodb-shell/
+
+[direct: mongos] labdb> db.clienti.updateOne({ _id: 51 }, { $set: { telefono: "+39 3331234567", "indirizzo.cap": "16122" } })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 1,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> db.clienti.updateOne({ _id: 51 }, { $set: { telefono: "+39 3331234567", "indirizzo.cap": "16122" } })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 0,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> db.clienti.updateOne({ _id: 51 }, { $inc: { punti: 50 }, $currentDate: { aaggiornato: true } })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 1,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> db.clienti.updateOne({ _id: 51 }, { $unset: { newsletter: "" }, $rename: { telefono: "cellulare" } })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 1,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> db.clienti.findOne({ _id: 51 })
+{
+  _id: 51,
+  nome: 'Anna',
+  cognome: 'Verdi',
+  email: 'anna.verdi51@esempio.it',
+  tipo: 'privato',
+  indirizzo: { citta: 'Genova', provincia: 'GE', cap: '16122' },
+  interessi: [ 'musica' ],
+  punti: 50,
+  iscritto: ISODate('2026-10-01T21:09:33.693Z'),
+  aggiornato: ISODate('2026-11-15T13:58:29.637Z'),
+  cellulare: '+39 3331234567'
+}
+[direct: mongos] labdb> db.clienti.updateOne({ _id: 51 }, { $push: { interessi: "viaggi" } })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 1,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> db.clienti.updateOne({ _id: 51 }, { $addToSet: { interessi: "viaggi" } })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 0,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> db.clienti.updateOne({ _id: 51 }, { $push: { interessi: { $each: ["cucina", "lettura"] } } })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 1,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> db.clienti.updateOne({ _id: 51 }, { $pull: { interessi: "musica" } })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 1,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> db.clienti.findOne({ _id: 51 }, { interessi: 1 })
+{ _id: 51, interessi: [ 'viaggi', 'cucina', 'lettura' ] }
+[direct: mongos] labdb> db.prodotti.updateMany({ giacenza: 0 }, { $set: { disponibile: false } })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 3,
+  modifiedCount: 3,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> db.prodotti.updateMany({ categoria: "Libri" }, [ { $set: { prezzo: { $roun$round: [ { $multiply: ["$prezzo", NumberDecimal("0.9")] }, 2 ] } } } ])
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 6,
+  modifiedCount: 6,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> db.prodotti.find({ categoria: "Libri" }, { prezzo: 1 })
+[
+  { _id: 'P015', prezzo: Decimal128('12.60') },
+  { _id: 'P016', prezzo: Decimal128('10.80') },
+  { _id: 'P017', prezzo: Decimal128('35.10') },
+  { _id: 'P018', prezzo: Decimal128('22.50') },
+  { _id: 'P019', prezzo: Decimal128('17.10') },
+  { _id: 'P020', prezzo: Decimal128('26.10') }
+]
+[direct: mongos] labdb> db.prodotti.updateOne({ _id: "P099" }, { $set: { nome: "Prodotto di prova", categoria: "Prove" }, $setOnInsert: { giacenza: 0, creato: new Date() } }, { upsert: true })
+{
+  acknowledged: true,
+  insertedId: 'P099',
+  matchedCount: 0,
+  modifiedCount: 0,
+  upsertedCount: 1
+}
+[direct: mongos] labdb> db.prodotti.updateOne({ _id: "P099" }, { $set: { nome: "Prodotto di prova", categoria: "Prove" }, $setOnInsert: { giacenza: 0, creato: new Date() } }, { upsert: true })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 0,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> db.vendite.countDocuments({ clienteId: 7, "righe.prodottoId": "P002" })
+13
+[direct: mongos] labdb> db.vendite.updateMany({ clienteId: 7, "righe.prodottoId": "P002" }, { $set: { "righe.$[r].sconto": NumberDecimal("2.00") } }, { arrayFilters: [ { "r.prodottoId": "P002" } ] })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 13,
+  modifiedCount: 13,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> db.vendite.findOne({ clienteId: 7, "righe.sconto": { $exists: true } }, { _id: 0, righe: 1 })
+{
+  righe: [
+    { prodottoId: 'P005', qta: 2, prezzo: Decimal128('45.90') },
+    {
+      prodottoId: 'P002',
+      qta: 1,
+      prezzo: Decimal128('24.90'),
+      sconto: Decimal128('2.00')
+    },
+    { prodottoId: 'P020', qta: 1, prezzo: Decimal128('29.00') }
+  ]
+}
+[direct: mongos] labdb> const v7 = db.vendite.findOne({ clienteId: 7, "righe.prodottoId": "P002" })
+
+[direct: mongos] labdb> db.vendite.updateOne({ _id: v7._id, clienteId: 7, "righe.prodottoId": "P002" }, { $inc: { "righe.$.qta": 1 } })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 1,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> db.vendite.findOne({ _id: v7._id }, { _id: 0, righe: 1 })
+{
+  righe: [
+    { prodottoId: 'P005', qta: 2, prezzo: Decimal128('45.90') },
+    {
+      prodottoId: 'P002',
+      qta: 2,
+      prezzo: Decimal128('24.90'),
+      sconto: Decimal128('2.00')
+    },
+    { prodottoId: 'P020', qta: 1, prezzo: Decimal128('29.00') }
+  ]
+}
+[direct: mongos] labdb> db.prove.replaceOne({ _id: 1 }, { testo: "documento sostituito" })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 1,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> db.prove.findOne({ _id: 1 })
+{ _id: 1, testo: 'documento sostituito' }
+[direct: mongos] labdb> db.prodotti.findOneAndUpdate({ _id: "P002" }, { $inc: { giacenza: -1 } }, { projection: { giacenza: 1 } })
+{ _id: 'P002', giacenza: 140 }
+[direct: mongos] labdb> db.prodotti.findOneAndUpdate({ _id: "P002" }, { $inc: { giacenza: -1 } }, { projection: { giacenza: 1 }, returnDocument: "after" })
+{ _id: 'P002', giacenza: 138 }
+[direct: mongos] labdb> db.vendite.updateOne({ stato: "annullata", canale: "telefono" }, { $set: { nota: "verificata" } })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 1,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> db.vendite.insertOne({ _id: "prova-sk", clienteId: 99, stato: "prova", totale: NumberDecimal("1.00") })
+{ acknowledged: true, insertedId: 'prova-sk' }
+[direct: mongos] labdb> db.vendite.updateOne({ _id: "prova-sk", clienteId: 99 }, { $set: { clienteId: 98 } })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 1,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> db.vendite.findOne({ _id: "prova-sk" })
+{
+  _id: 'prova-sk',
+  clienteId: 98,
+  stato: 'prova',
+  totale: Decimal128('1.00')
+}
+[direct: mongos] labdb> db.vendite.updateMany({ clienteId: 98 }, { $set: { clienteId: 97 } })
+MongoServerError: Multi-update operations are not allowed when updating the shard key field.
+[direct: mongos] labdb> db.vendite.updateMany({ clienteId: 98 }, { $set: { clienteId: 97 } })
+MongoServerError: Multi-update operations are not allowed when updating the shard key field.
+[direct: mongos] labdb>
+[direct: mongos] labdb>
+
+```
