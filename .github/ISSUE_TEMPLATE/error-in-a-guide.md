@@ -10,7 +10,7 @@ assignees: ''
 **Describe the bug**
 A clear and concise description of what the bug is.
 **Guide and section**
-File and section (e.g. `01-tls-guida-completa.md`, "Parte 5").
+File and section (e.g. `docs/ita/01-tls-guida-completa.md`, "Parte 5", or `docs/eng/01-tls-complete-guide.md`, "Part 5").
 
 **What happened**
 The command you ran and the output you got. Remove passwords, hostnames and IP addresses.

@@ -1,0 +1,6 @@
+_id.string(),nome.string(),categoria.string(),prezzo.decimal(),giacenza.int32()
+P031,Chiavetta USB 64 GB,Informatica,12.90,250
+P032,Tostapane,Casa,34.50,40
+P033,Il Gattopardo,Libri,13.00,60
+P034,Pallone da calcio,Sport,24.99,85
+P035,Raccoglitore ad anelli,Ufficio,4.20,400

@@ -22,7 +22,7 @@ Il setup è pensato per ambienti di **sviluppo e test**, con una checklist dedic
 
 ## Cosa comprende
 
-Autenticazione, utente applicativo con permessi limitati, backup automatici con retention giornaliera/settimanale/mensile, accesso dall'ambiente di sviluppo (tunnel SSH o accesso diretto), gestione dei log e hardening di base del sistema (aggiornamenti automatici, SSH solo con chiave). Una seconda parte copre la cifratura delle connessioni con **TLS**, tramite una CA privata, una terza il **replica set** e una quarta lo **sharding**, costruiti in laboratorio e accompagnati dallo scenario di produzione.
+Autenticazione, utente applicativo con permessi limitati, backup automatici con retention giornaliera/settimanale/mensile, accesso dall'ambiente di sviluppo (tunnel SSH o accesso diretto), gestione dei log e hardening di base del sistema (aggiornamenti automatici, SSH solo con chiave). Una seconda parte copre la cifratura delle connessioni con **TLS**, tramite una CA privata, una terza il **replica set** e una quarta lo **sharding**, costruiti in laboratorio e accompagnati dallo scenario di produzione. Una quinta parte insegna a **usare** il cluster con `mongosh`: operazioni CRUD, indici, aggregazione, transazioni, validazione, ricerca testuale, change stream, import ed export.
 
 > **Perché Docker?** L'immagine Docker ufficiale di MongoDB include tutte le dipendenze, quindi funziona su Debian 13 senza forzature, e rende semplici aggiornamenti e rimozione.
 
@@ -30,16 +30,31 @@ Autenticazione, utente applicativo con permessi limitati, backup automatici con 
 
 Le guide sono numerate nell'ordine in cui vanno seguite. Ogni argomento ha due versioni: una **completa**, per chi ha poca esperienza con Linux, Docker o MongoDB (ogni passaggio spiega cosa fa il comando e cosa aspettarsi), e una **rapida**, per chi conosce già l'ambiente (sequenza dei comandi con spiegazioni essenziali).
 
+Le guide sono disponibili in due lingue, in cartelle separate: **italiano** in [`docs/ita`](docs/ita) e **inglese** in [`docs/eng`](docs/eng). I comandi, i file di configurazione e gli output sono identici nelle due versioni.
+
+**Italiano**
+
 | # | Argomento | Guida completa | Guida rapida |
 |---|---|---|---|
-| 00 | Installazione, sicurezza di base, utente applicativo, backup, accesso, manutenzione | [00-guida-completa](docs/00-guida-completa.md) | [00-guida-rapida](docs/00-guida-rapida.md) |
-| 01 | Cifratura delle connessioni con TLS (CA privata, client, rinnovi) | [01-tls-guida-completa](docs/01-tls-guida-completa.md) | [01-tls-guida-rapida](docs/01-tls-guida-rapida.md) |
-| 02 | Replica set: costruzione, failover, accesso esterno, TLS a rotazione, backup con oplog, manutenzione | [02-replica-set-guida-completa](docs/02-replica-set-guida-completa.md) | [02-replica-set-guida-rapida](docs/02-replica-set-guida-rapida.md) |
-| 03 | Sharding: cluster completo, shard key, bilanciatore, TLS, backup notturno | [03-sharding-guida-completa](docs/03-sharding-guida-completa.md) | [03-sharding-guida-rapida](docs/03-sharding-guida-rapida.md) |
+| 00 | Installazione, sicurezza di base, utente applicativo, backup, accesso, manutenzione | [00-guida-completa](docs/ita/00-guida-completa.md) | [00-guida-rapida](docs/ita/00-guida-rapida.md) |
+| 01 | Cifratura delle connessioni con TLS (CA privata, client, rinnovi) | [01-tls-guida-completa](docs/ita/01-tls-guida-completa.md) | [01-tls-guida-rapida](docs/ita/01-tls-guida-rapida.md) |
+| 02 | Replica set: costruzione, failover, accesso esterno, TLS a rotazione, backup con oplog, manutenzione | [02-replica-set-guida-completa](docs/ita/02-replica-set-guida-completa.md) | [02-replica-set-guida-rapida](docs/ita/02-replica-set-guida-rapida.md) |
+| 03 | Sharding: cluster completo, shard key, bilanciatore, TLS, backup notturno | [03-sharding-guida-completa](docs/ita/03-sharding-guida-completa.md) | [03-sharding-guida-rapida](docs/ita/03-sharding-guida-rapida.md) |
+| 04 | CRUD con mongosh: lettura e scrittura, indici, aggregazione, transazioni, validazione, ricerca testuale, change stream, import/export | [04-crud-guida-completa](docs/ita/04-crud-guida-completa.md) | [04-crud-guida-rapida](docs/ita/04-crud-guida-rapida.md) |
 
-Per tutte le guide vale la **[legenda dei comandi](docs/legenda-comandi-linux.md)**: spiega ogni comando Linux, simbolo della shell, comando Docker, MongoDB e PowerShell usato nel progetto, con esempi presi dalle guide.
+**English**
 
-La guida 01 presuppone di aver completato la 00; la 02 presuppone la 00 e la 01 (riusa la CA per il TLS); la 03 presuppone la 00 e la 01, e la 02 è consigliata.
+| # | Topic | Complete guide | Quick guide |
+|---|---|---|---|
+| 00 | Installation, basic security, application user, backup, access, maintenance | [00-complete-guide](docs/eng/00-complete-guide.md) | [00-quick-guide](docs/eng/00-quick-guide.md) |
+| 01 | Encrypting connections with TLS (private CA, clients, renewals) | [01-tls-complete-guide](docs/eng/01-tls-complete-guide.md) | [01-tls-quick-guide](docs/eng/01-tls-quick-guide.md) |
+| 02 | Replica set: build, failover, external access, rolling TLS, backup with oplog, maintenance | [02-replica-set-complete-guide](docs/eng/02-replica-set-complete-guide.md) | [02-replica-set-quick-guide](docs/eng/02-replica-set-quick-guide.md) |
+| 03 | Sharding: full cluster, shard key, balancer, TLS, nightly backup | [03-sharding-complete-guide](docs/eng/03-sharding-complete-guide.md) | [03-sharding-quick-guide](docs/eng/03-sharding-quick-guide.md) |
+| 04 | CRUD with mongosh: reads and writes, indexes, aggregation, transactions, validation, text search, change streams, import/export | [04-crud-complete-guide](docs/eng/04-crud-complete-guide.md) | [04-crud-quick-guide](docs/eng/04-crud-quick-guide.md) |
+
+Per tutte le guide vale la **legenda dei comandi** ([italiano](docs/ita/legenda-comandi-linux.md), [English](docs/eng/linux-commands-legend.md)): spiega ogni comando Linux, simbolo della shell, comando Docker, MongoDB e PowerShell usato nel progetto, con esempi presi dalle guide.
+
+La guida 01 presuppone di aver completato la 00; la 02 presuppone la 00 e la 01 (riusa la CA per il TLS); la 03 presuppone la 00 e la 01, e la 02 è consigliata; la 04 presuppone il cluster della 03.
 
 ### Il percorso
 
@@ -49,6 +64,7 @@ flowchart LR
     G01 --> G02["02 · Replica set<br/>3 nodi"]
     G01 --> G03["03 · Sharding<br/>10 processi"]
     G02 -. "consigliata" .-> G03
+    G03 --> G04["04 · CRUD<br/>mongosh"]
     LEG["Legenda dei comandi"] -.- G00
 ```
 
@@ -65,15 +81,30 @@ flowchart LR
 .
 ├── README.md
 ├── docs/
-│   ├── 00-guida-completa.md
-│   ├── 00-guida-rapida.md
-│   ├── 01-tls-guida-completa.md
-│   ├── 01-tls-guida-rapida.md
-│   ├── 02-replica-set-guida-completa.md
-│   ├── 02-replica-set-guida-rapida.md
-│   ├── 03-sharding-guida-completa.md
-│   ├── 03-sharding-guida-rapida.md
-│   └── legenda-comandi-linux.md      (legenda dei comandi, valida per tutte le guide)
+│   ├── ita/                          Guide in italiano
+│   │   ├── 00-guida-completa.md
+│   │   ├── 00-guida-rapida.md
+│   │   ├── 01-tls-guida-completa.md
+│   │   ├── 01-tls-guida-rapida.md
+│   │   ├── 02-replica-set-guida-completa.md
+│   │   ├── 02-replica-set-guida-rapida.md
+│   │   ├── 03-sharding-guida-completa.md
+│   │   ├── 03-sharding-guida-rapida.md
+│   │   ├── 04-crud-guida-completa.md
+│   │   ├── 04-crud-guida-rapida.md
+│   │   └── legenda-comandi-linux.md  (legenda dei comandi, valida per tutte le guide)
+│   └── eng/                          Guide in inglese (stessi contenuti)
+│       ├── 00-complete-guide.md
+│       ├── 00-quick-guide.md
+│       ├── 01-tls-complete-guide.md
+│       ├── 01-tls-quick-guide.md
+│       ├── 02-replica-set-complete-guide.md
+│       ├── 02-replica-set-quick-guide.md
+│       ├── 03-sharding-complete-guide.md
+│       ├── 03-sharding-quick-guide.md
+│       ├── 04-crud-complete-guide.md
+│       ├── 04-crud-quick-guide.md
+│       └── linux-commands-legend.md
 └── config/
     ├── 00-base/                      Risorse della guida 00 (senza TLS)
     │   ├── docker-compose.yml        → ~/mongodb/docker-compose.yml
@@ -92,14 +123,18 @@ flowchart LR
     │   ├── mongo-rs-backup.sh        → /usr/local/bin/mongo-rs-backup.sh (impostare LAB e FQDN)
     │   ├── mongo-rs-backup.service   → /etc/systemd/system/
     │   └── mongo-rs-backup.timer     → /etc/systemd/system/ (03:00 UTC)
-    └── 03-sharding/                  Risorse della guida 03 (cluster con sharding)
-        ├── docker-compose.yml        → ~/mongo-lab/03-sharding/ (senza TLS)
-        ├── docker-compose-tls.yml    → ~/mongo-lab/03-sharding/docker-compose.yml (con TLS)
-        ├── server.ext.example        → ~/mongo-lab/03-sharding/tls/server.ext
-        ├── funzioni-lab.sh           → ~/mongo-lab/03-sharding/ (sh_eval, node_eval; versione TLS)
-        ├── mongo-sh-backup.sh        → /usr/local/bin/mongo-sh-backup.sh (impostare LAB)
-        ├── mongo-sh-backup.service   → /etc/systemd/system/
-        └── mongo-sh-backup.timer     → /etc/systemd/system/ (03:30 UTC)
+    ├── 03-sharding/                  Risorse della guida 03 (cluster con sharding)
+    │   ├── docker-compose.yml        → ~/mongo-lab/03-sharding/ (senza TLS)
+    │   ├── docker-compose-tls.yml    → ~/mongo-lab/03-sharding/docker-compose.yml (con TLS)
+    │   ├── server.ext.example        → ~/mongo-lab/03-sharding/tls/server.ext
+    │   ├── funzioni-lab.sh           → ~/mongo-lab/03-sharding/ (sh_eval, node_eval; versione TLS)
+    │   ├── mongo-sh-backup.sh        → /usr/local/bin/mongo-sh-backup.sh (impostare LAB)
+    │   ├── mongo-sh-backup.service   → /etc/systemd/system/
+    │   └── mongo-sh-backup.timer     → /etc/systemd/system/ (03:30 UTC)
+    └── 04-crud/                      Risorse della guida 04 (CRUD con mongosh)
+        ├── funzioni-crud.sh          → ~/mongo-lab/04-crud/ (app_shell, app_eval, app_export, app_import)
+        ├── dati-crud.js              → ~/mongo-lab/04-crud/ (dati di esempio, rilanciabile)
+        └── prodotti.csv              → ~/mongo-lab/04-crud/ (CSV per la prova di import)
 ```
 
 Ogni guida ha la propria cartella di risorse, con gli stessi file riportati nel testo, pronti da copiare sulla VM nei percorsi indicati. La guida 01 contiene solo i file che cambiano rispetto alla 00: timer, servizio systemd e impostazioni del kernel restano quelli di `00-base`.
@@ -127,7 +162,7 @@ sudo docker compose up -d
 sudo docker exec -it mongo mongosh -u admin -p --authenticationDatabase admin
 ```
 
-Per utente applicativo, backup, accesso remoto e hardening segui la [guida rapida](docs/00-guida-rapida.md) o la [guida completa](docs/00-guida-completa.md); per il TLS, le guide [01](docs/01-tls-guida-completa.md).
+Per utente applicativo, backup, accesso remoto e hardening segui la [guida rapida](docs/ita/00-guida-rapida.md) o la [guida completa](docs/ita/00-guida-completa.md); per il TLS, le guide [01](docs/ita/01-tls-guida-completa.md).
 
 ## Note di sicurezza
 
@@ -146,6 +181,7 @@ Testato con MongoDB 8.0.32, Docker Engine 29, Docker Compose 5 su Debian 13 (Azu
 | 01 (TLS) | Parti 2–9 collaudate su un'installazione reale, compresa l'esecuzione notturna del backup con TLS. Rinnovo del certificato, rollback e script `genera-certificati-tls.sh` non ancora collaudati su VM (🧪) |
 | 03 (sharding) | Collaudata su un'installazione reale (10 container su una VM), compresi TLS a freddo, backup notturno e ripristino. Non collaudati (🧪): ripristino degli utenti dal backup, retention settimanale/mensile nel tempo; argomenti avanzati (zone, resharding, x.509) solo descritti |
 | 02 (replica set) | Collaudata su un'installazione reale (laboratorio con tre container su una VM). Non ancora collaudati (🧪): rollback del TLS, cambio password, smantellamento, retention settimanale/mensile su un periodo reale; opzioni avanzate (x.509, secondario nascosto, horizons) solo descritte |
+| 04 (CRUD) | Collaudata su un'installazione reale, sul cluster della guida 03 con l'utente applicativo. Non ancora collaudati (🧪): ripresa del change stream con `resumeAfter`, conteggio dei documenti non validi dopo il passaggio a `warn`; argomenti avanzati (read concern, collation, indici geospaziali, time series) solo elencati |
 
 Le parti non ancora collaudate sono segnalate nelle guide con il simbolo 🧪. Se le esegui, segnala eventuali differenze.
 
