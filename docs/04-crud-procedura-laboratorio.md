@@ -829,7 +829,7 @@ db.prodotti.updateOne({ _id: "P099" }, { $set: { nome: "Prodotto di prova", cate
 db.prodotti.updateOne({ _id: "P099" }, { $set: { nome: "Prodotto di prova", categoria: "Prove" }, $setOnInsert: { giacenza: 0, creato: new Date() } }, { upsert: true })
 ```
 
-✅ **3** prodotti esauriti (P007, P014, P026). Libri scontati del 10%: 12.60, 10.80, 35.10, 22.50, 17.10, 26.10 (annota com'è scritto il valore, ad esempio `Decimal128('12.60')` oppure `'12.600'`). Primo upsert: `upsertedId: 'P099'`; secondo: `matchedCount: 1, modifiedCount: 0, upsertedCount: 0`.
+✅ **3** prodotti esauriti (P007, P014, P026). Libri scontati del 10%: 12.60, 10.80, 35.10, 22.50, 17.10, 26.10 (mostrati come `Decimal128('12.60')`: l'arrotondamento a 2 decimali è conservato). Primo upsert: `insertedId: 'P099', matchedCount: 0, upsertedCount: 1`; secondo: `insertedId: null, matchedCount: 1, modifiedCount: 0, upsertedCount: 0`.
 
 ### 5.4 Elementi di un array: `$` e `arrayFilters`
 
@@ -865,7 +865,7 @@ db.vendite.findOne({ _id: "prova-sk" })
 db.vendite.updateMany({ clienteId: 98 }, { $set: { clienteId: 97 } })
 ```
 
-✅ (da verificare) Il primo funziona anche senza shard key nel filtro (consentito da MongoDB 7.1). Cambiare il **valore** della shard key con `updateOne` funziona (il documento può cambiare shard); con `updateMany` l'operazione viene rifiutata: `MongoServerError: Multi-update operations are not allowed when updating the shard key field.` (confermato). Annota i messaggi esatti degli altri comandi.
+✅ Il primo funziona anche senza shard key nel filtro (`matchedCount: 1, modifiedCount: 1`; consentito da MongoDB 7.1). Cambiare il **valore** della shard key con `updateOne` funziona (`matchedCount: 1, modifiedCount: 1`; il documento può cambiare shard) e il `findOne` mostra `clienteId: 98`. Con `updateMany` l'operazione viene rifiutata: `MongoServerError: Multi-update operations are not allowed when updating the shard key field.`
 
 📋 **Output della Parte 5.**
 
@@ -1093,3 +1093,1035 @@ MongoServerError: Multi-update operations are not allowed when updating the shar
 [direct: mongos] labdb>
 
 ```
+
+## Parte 6 — Delete
+
+```js
+db.vendite.deleteOne({ _id: "prova-sk", clienteId: 97 })
+db.vendite.deleteOne({ _id: "prova-sk" })
+db.prove.deleteOne({ _id: 3 })
+db.vendite.countDocuments({ stato: "annullata", data: { $lt: ISODate("2026-02-01") } })
+db.vendite.deleteMany({ stato: "annullata", data: { $lt: ISODate("2026-02-01") } })
+db.prodotti.findOneAndDelete({ _id: "P099" })
+db.prove.deleteMany({})
+show collections
+db.prove.drop()
+show collections
+```
+
+✅ Il primo `deleteOne` cancella **0** documenti (`prova-sk` ha `clienteId: 98`, non 97: l'`updateMany` di 5.6 era stato rifiutato); il secondo, senza shard key nel filtro, lo cancella (`deletedCount: 1`). `db.prove.deleteOne({ _id: 3 })`: `deletedCount: 1`. Poi: **83** vendite annullate a gennaio, `deletedCount: 83`; `findOneAndDelete` restituisce il documento eliminato. `deleteMany({})` su `prove`: `deletedCount: 4` (nel collaudo `5`, perché il `deleteOne` su `_id: 3` era stato saltato). Dopo `deleteMany({})` la collezione `prove` **esiste ancora** (vuota, con i suoi indici); dopo `drop()` (`true`) non c'è più.
+
+📋 **Output della Parte 6.**
+
+## Parte 7 — Indici ed explain
+
+Una piccola funzione per leggere `explain` (va ridefinita a ogni apertura di `app_shell`):
+
+```js
+const piano = e => print("restituiti:", e.executionStats.nReturned, "| documenti esaminati:", e.executionStats.totalDocsExamined, "| chiavi esaminate:", e.executionStats.totalKeysExamined, "| stadi:", [...new Set(JSON.stringify(e.queryPlanner.winningPlan).match(/\b(COLLSCAN|IXSCAN|SORT|FETCH)\b/g))].join(" "))
+```
+
+### 7.1 Indice composto (regola ESR)
+
+```js
+db.vendite.getIndexes()
+piano(db.vendite.find({ stato: "spedita", canale: "web" }).sort({ data: -1 }).explain("executionStats"))
+db.vendite.createIndex({ stato: 1, canale: 1, data: -1 })
+piano(db.vendite.find({ stato: "spedita", canale: "web" }).sort({ data: -1 }).explain("executionStats"))
+piano(db.vendite.find({ canale: "web" }).sort({ data: -1 }).explain("executionStats"))
+```
+
+✅ Indici iniziali: `_id_` e `clienteId_hashed`. Prima: **418** restituiti, **4917** documenti esaminati, 0 chiavi, `SORT COLLSCAN`. `createIndex` risponde `stato_1_canale_1_data_-1`. Dopo l'indice: 418 restituiti, **418** esaminati, 418 chiavi, `FETCH IXSCAN`, niente `SORT`. L'ultima query (senza `stato`, il primo campo dell'indice) torna a `SORT COLLSCAN`: 2450 restituiti, 4917 esaminati.
+
+### 7.2 Indice unique
+
+```js
+db.clienti.createIndex({ email: 1 }, { unique: true })
+db.clienti.insertOne({ _id: 52, nome: "Copia", email: "anna.verdi51@esempio.it" })
+db.vendite.createIndex({ data: 1 }, { unique: true })
+db.vendite.createIndex({ clienteId: 1, data: 1 }, { unique: true })
+```
+
+✅ Su `clienti` l'indice si crea, e l'inserimento con la stessa email fallisce con `E11000`. Su `vendite` (distribuita) `{ data: 1 }` viene rifiutato: `MongoServerError[CannotCreateIndex]: ... cannot create index with 'unique' or 'prepareUnique' option over { data: 1 } with shard key pattern { clienteId: "hashed" }`, perché un indice unique deve contenere la shard key. `{ clienteId: 1, data: 1 }` invece **si crea** (`clienteId_1_data_1`), anche se la shard key è hashed: tutte le vendite di uno stesso cliente stanno sullo stesso shard, che può quindi garantire l'unicità.
+
+> ⚠️ Questo indice resta su `vendite` fino alla pulizia: da qui in poi non possono esistere due vendite con lo stesso `clienteId` e la stessa `data` (o entrambe senza `data`).
+
+### 7.3 Indice TTL
+
+```js
+db.sessioni.createIndex({ creata: 1 }, { expireAfterSeconds: 120 })
+db.sessioni.insertMany([ { utente: "anna", creata: new Date() }, { utente: "marco", creata: new Date(Date.now() - 3600 * 1000) } ])
+db.sessioni.countDocuments()
+```
+
+✅ `2`. Prosegui con il 7.4 e ricontrolla tra un paio di minuti (passo 7.5).
+
+### 7.4 Indice parziale
+
+```js
+db.prodotti.createIndex({ nome: 1 }, { partialFilterExpression: { giacenza: { $gt: 0 } } })
+piano(db.prodotti.find({ nome: "Mouse senza fili", giacenza: { $gt: 0 } }).explain("executionStats"))
+piano(db.prodotti.find({ nome: "Mouse senza fili" }).explain("executionStats"))
+db.prodotti.getIndexes().map(i => i.name)
+```
+
+✅ La prima usa l'indice (`FETCH IXSCAN`, 1 documento esaminato); la seconda no (`COLLSCAN`, 30 documenti esaminati); gli indici sono `[ '_id_', 'nome_1' ]`: l'indice contiene solo i prodotti disponibili, quindi vale solo per le query che lo garantiscono.
+
+### 7.5 Il TTL al lavoro
+
+```js
+db.sessioni.find({}, { _id: 0, utente: 1 })
+db.sessioni.drop()
+exit
+```
+
+✅ Dopo uno o due minuti resta solo `anna`: il controllo delle scadenze gira ogni 60 secondi. Dopo altri 2 minuti sparirebbe anche lei.
+
+📋 **Output della Parte 7.**
+
+```bash
+azureuserdgs@azmdb01:~$ source ~/mongo-lab/04-crud/funzioni-crud.sh
+azureuserdgs@azmdb01:~$ app_shell
+Current Mongosh Log ID: 6af9c4027635bba6fb425d2e
+Connecting to:          mongodb://<credentials>@127.0.0.1:27200/labdb?directConnection=true&serverSelectionTimeoutMS=2000&tls=true&tlsCAFile=%2Fetc%2Fmongo%2Ftls%2Fca.pem&authSource=labdb&appName=mongosh+2.11.1
+Using MongoDB:          8.0.32
+Using Mongosh:          2.11.1
+
+For mongosh info see: https://www.mongodb.com/docs/mongodb-shell/
+
+[direct: mongos] labdb> db.vendite.deleteOne({ _id: "prova-sk", clienteId: 97 })
+{ acknowledged: true, deletedCount: 0 }
+[direct: mongos] labdb> db.vendite.deleteOne({ _id: "prova-sk" })
+{ acknowledged: true, deletedCount: 1 }
+[direct: mongos] labdb> db.vendite.countDocuments({ stato: "annullata", data: { $lt: ISODate("2026-02-01") } })
+83
+[direct: mongos] labdb> db.vendite.deleteMany({ stato: "annullata", data: { $lt: ISODate("2026-02-01") } })
+{ acknowledged: true, deletedCount: 83 }
+[direct: mongos] labdb> db.prodotti.findOneAndDelete({ _id: "P099" })
+{
+  _id: 'P099',
+  categoria: 'Prove',
+  creato: ISODate('2026-11-15T14:01:47.239Z'),
+  giacenza: 0,
+  nome: 'Prodotto di prova'
+}
+[direct: mongos] labdb> db.prove.deleteMany({})
+{ acknowledged: true, deletedCount: 5 }
+[direct: mongos] labdb> show collections
+clienti
+eventi
+ordini
+prodotti
+prove
+vendite
+[direct: mongos] labdb> db.prove.drop()
+true
+[direct: mongos] labdb> show collections
+clienti
+eventi
+ordini
+prodotti
+vendite
+[direct: mongos] labdb> const piano = e => print("restituiti:", e.executionStats.nReturned, "| documenti esaminati:", e.executionStats.totalDocsExamined, "| chiavi esaminate:", e.executionStats.totalKeysExamined, "| stadi:", [...new Set(JSON.stringify(e.queryPlanner.winningPlan).match(/\b(COLLSCAN|IXSCAN|SORT|FETCH)\b/g))].join([direct: mongos] labdb> const piano = e => print("restituiti:", e.executionStats.nReturned, "| documenti esaminati:", e.executionStats.totalDocsExamined, "| chiavi esaminate:", e.executionStats.totalKeysExamined, "| stadi:", [...new Set(JSON.stringify(e.queryPlanner.winningPlan).match(/\b(COLLSCAN|IXSCAN|SORT|FETCH)\b/g))].join(" "))
+
+[direct: mongos] labdb> db.vendite.getIndexes()
+[
+  { v: 2, key: { _id: 1 }, name: '_id_' },
+  { v: 2, key: { clienteId: 'hashed' }, name: 'clienteId_hashed' }
+]
+[direct: mongos] labdb> piano(db.vendite.find({ stato: "spedita", canale: "web" }).sort({ data: -1 }).explain("executionStats"))
+restituiti: 418 | documenti esaminati: 4917 | chiavi esaminate: 0 | stadi: SORT COLLSCAN
+
+[direct: mongos] labdb> db.vendite.createIndex({ stato: 1, canale: 1, data: -1 })
+stato_1_canale_1_data_-1
+[direct: mongos] labdb> piano(db.vendite.find({ stato: "spedita", canale: "web" }).sort({ data: -1 }).explain("executionStats"))
+restituiti: 418 | documenti esaminati: 418 | chiavi esaminate: 418 | stadi: FETCH IXSCAN
+
+[direct: mongos] labdb> piano(db.vendite.find({ canale: "web" }).sort({ data: -1 }).explain("executionStats"))
+restituiti: 2450 | documenti esaminati: 4917 | chiavi esaminate: 0 | stadi: SORT COLLSCAN
+
+[direct: mongos] labdb> db.clienti.createIndex({ email: 1 }, { unique: true })
+email_1
+[direct: mongos] labdb> db.clienti.insertOne({ _id: 52, nome: "Copia", email: "anna.verdi51@esempio.it" })
+MongoServerError: E11000 duplicate key error collection: labdb.clienti index: email_1 dup key: { email: "anna.verdi51@esempio.it" }
+[direct: mongos] labdb> db.vendite.createIndex({ data: 1 }, { unique: true })
+MongoServerError[CannotCreateIndex]: Index build failed: 99f38597-d502-4ab5-96d3-cbfc65ee71ba: Collection labdb.vendite ( 680c55d1-da4b-408f-b811-dbeaed14193c ) :: caused by :: cannot create index with 'unique' or 'prepareUnique' option over { data: 1 } with shard key pattern { clienteId: "hashed" } and collation {}
+[direct: mongos] labdb> db.vendite.createIndex({ clienteId: 1, data: 1 }, { unique: true })
+clienteId_1_data_1
+[direct: mongos] labdb> db.sessioni.createIndex({ creata: 1 }, { expireAfterSeconds: 120 })
+creata_1
+[direct: mongos] labdb> db.sessioni.insertMany([ { utente: "anna", creata: new Date() }, { utente: "marco", creata: new Date(Date.now() - 3600 * 1000) } ])
+{
+  acknowledged: true,
+  insertedIds: {
+    '0': ObjectId('6af9c49e7635bba6fb425d2f'),
+    '1': ObjectId('6af9c49e7635bba6fb425d30')
+  }
+}
+[direct: mongos] labdb> db.sessioni.countDocuments()
+2
+[direct: mongos] labdb> db.prodotti.createIndex({ nome: 1 }, { partialFilterExpression: { giacenza: { $gt: 0 } } })
+nome_1
+[direct: mongos] labdb> piano(db.prodotti.find({ nome: "Mouse senza fili", giacenza: { $gt: 0 } }).explain("executionStats"))
+restituiti: 1 | documenti esaminati: 1 | chiavi esaminate: 1 | stadi: FETCH IXSCAN
+
+[direct: mongos] labdb> piano(db.prodotti.find({ nome: "Mouse senza fili" }).explain("executionStats"))
+restituiti: 1 | documenti esaminati: 30 | chiavi esaminate: 0 | stadi: COLLSCAN
+
+[direct: mongos] labdb> db.prodotti.getIndexes().map(i => i.name)
+[ '_id_', 'nome_1' ]
+[direct: mongos] labdb> db.sessioni.find({}, { _id: 0, utente: 1 })
+[ { utente: 'anna' } ]
+[direct: mongos] labdb> db.sessioni.drop()
+true
+[direct: mongos] labdb>
+```
+
+---
+
+# Blocco D
+
+## Parte 8 — Aggregazione
+
+```bash
+app_shell
+```
+
+### 8.1 Raggruppare
+
+```js
+db.vendite.aggregate([ { $group: { _id: "$stato", vendite: { $sum: 1 }, incasso: { $sum: "$totale" } } }, { $sort: { vendite: -1 } } ])
+db.vendite.aggregate([ { $match: { stato: "consegnata" } }, { $group: { _id: { $dateToString: { format: "%Y-%m", date: "$data" } }, incasso: { $sum: "$totale" } } }, { $sort: { _id: 1 } } ])
+```
+
+✅ Stati: consegnata **2493** (1.195.049,30), spedita **881**, in lavorazione **800**, annullata **743** (dopo le 83 cancellate). Mesi da `2026-01` (102.826,40) a `2026-11` (34.394,20).
+
+### 8.2 `$unwind` e `$lookup`
+
+```js
+db.vendite.aggregate([ { $unwind: "$righe" }, { $group: { _id: "$righe.prodottoId", pezzi: { $sum: "$righe.qta" } } }, { $sort: { pezzi: -1, _id: 1 } }, { $limit: 5 }, { $lookup: { from: "prodotti", localField: "_id", foreignField: "_id", as: "prodotto" } }, { $project: { _id: 0, prodotto: { $first: "$prodotto.nome" }, pezzi: 1 } } ])
+db.vendite.aggregate([ { $group: { _id: "$clienteId", speso: { $sum: "$totale" } } }, { $sort: { speso: -1 } }, { $limit: 3 }, { $lookup: { from: "clienti", localField: "_id", foreignField: "_id", as: "c" } }, { $unwind: "$c" }, { $project: { _id: 0, cliente: { $concat: ["$c.nome", " ", "$c.cognome"] }, citta: "$c.indirizzo.citta", speso: 1 } } ])
+```
+
+✅ Prodotti: Atlante del cielo (739), Zaino da trekking (714), Bollitore elettrico (708), Aspirapolvere robot (692), Guida alle Dolomiti (692); gli ultimi due sono a pari merito, per questo l'ordinamento usa anche `_id`. Clienti: Andrea Rossi, Napoli (76.399,70); Luca Colombo, Milano (65.122,40); Francesca Marino, Milano (60.443,60).
+
+### 8.3 `$facet` e `$bucket`
+
+```js
+db.vendite.aggregate([ { $facet: { perCanale: [ { $group: { _id: "$canale", n: { $sum: 1 } } }, { $sort: { n: -1 } } ], perFascia: [ { $bucket: { groupBy: "$totale", boundaries: [0, 50, 100, 250, 500, 1000, 5000], default: "altro", output: { n: { $sum: 1 } } } } ] } } ])
+```
+
+✅ Canali: web 2450, telefono 1241, negozio 1226. Fasce: 0→507, 50→565, 100→1124, 250→1141, 500→976, 1000→604.
+
+### 8.4 `$merge`: salvare il risultato
+
+```js
+db.vendite.aggregate([ { $match: { stato: "consegnata" } }, { $group: { _id: { $dateToString: { format: "%Y-%m", date: "$data" } }, incasso: { $sum: "$totale" }, vendite: { $sum: 1 } } }, { $merge: { into: "riepilogo_mensile", whenMatched: "replace", whenNotMatched: "insert" } } ])
+db.riepilogo_mensile.find().sort({ _id: 1 }).limit(3)
+```
+
+✅ L'aggregazione non restituisce nulla; `riepilogo_mensile` contiene 11 documenti, uno per mese.
+
+### 8.5 Come il router divide una pipeline
+
+```js
+const e = db.vendite.explain().aggregate([ { $match: { stato: "consegnata" } }, { $group: { _id: "$canale", n: { $sum: 1 } } } ])
+print("fusione:", e.mergeType); print("su ogni shard:", JSON.stringify(e.splitPipeline.shardsPart)); print("fusione finale:", JSON.stringify(e.splitPipeline.mergerPart))
+const e2 = db.vendite.explain().aggregate([ { $match: { clienteId: 7 } }, { $group: { _id: "$canale", n: { $sum: 1 } } } ])
+print("con la shard key:", e2.splitPipeline === null ? "nessuna divisione" : "divisa", "- shard:", Object.keys(e2.shards).length)
+```
+
+✅ Senza shard key: `fusione: mongos`; su ogni shard il `$match` e un `$group` parziale; nella fusione finale un `$mergeCursors` seguito da un `$group` che somma i parziali (`"n":{"$sum":"$$ROOT.n"}`). Con `clienteId: 7`: `con la shard key: nessuna divisione - shard: 1`.
+
+📋 **Output della Parte 8.**
+
+```bash
+azureuserdgs@azmdb01:~$ source ~/mongo-lab/04-crud/funzioni-crud.sh
+azureuserdgs@azmdb01:~$ app_shell
+Current Mongosh Log ID: 6af9c5390b7fb7f6d42b86bb
+Connecting to:          mongodb://<credentials>@127.0.0.1:27200/labdb?directConnection=true&serverSelectionTimeoutMS=2000&tls=true&tlsCAFile=%2Fetc%2Fmongo%2Ftls%2Fca.pem&authSource=labdb&appName=mongosh+2.11.1
+Using MongoDB:          8.0.32
+Using Mongosh:          2.11.1
+
+For mongosh info see: https://www.mongodb.com/docs/mongodb-shell/
+
+[direct: mongos] labdb> db.vendite.aggregate([ { $group: { _id: "$stato", vendite: { $sum: 1 }, incasso: { $sum: "$totale" } } }, { $sort: { vendite: -1 } } ])
+[
+  { _id: 'consegnata', vendite: 2493, incasso: Decimal128('1195049.30') },
+  { _id: 'spedita', vendite: 881, incasso: Decimal128('433230.00') },
+  {
+    _id: 'in lavorazione',
+    vendite: 800,
+    incasso: Decimal128('392134.10')
+  },
+  { _id: 'annullata', vendite: 743, incasso: Decimal128('360623.50') }
+]
+[direct: mongos] labdb> db.vendite.aggregate([ { $match: { stato: "consegnata" } }, { $group: { _id: { $dateToString: { format: "%Y-%m", date: "$data" } }, incasso: { $sum: "$totale" } } }, { $sort: { _id: 1 } } ])
+[
+  { _id: '2026-01', incasso: Decimal128('102826.40') },
+  { _id: '2026-02', incasso: Decimal128('105804.70') },
+  { _id: '2026-03', incasso: Decimal128('134028.90') },
+  { _id: '2026-04', incasso: Decimal128('104699.40') },
+  { _id: '2026-05', incasso: Decimal128('133419.90') },
+  { _id: '2026-06', incasso: Decimal128('105824.60') },
+  { _id: '2026-07', incasso: Decimal128('103145.70') },
+  { _id: '2026-08', incasso: Decimal128('122446.50') },
+  { _id: '2026-09', incasso: Decimal128('126184.00') },
+  { _id: '2026-10', incasso: Decimal128('122275.00') },
+  { _id: '2026-11', incasso: Decimal128('34394.20') }
+]
+[direct: mongos] labdb> db.vendite.aggregate([ { $unwind: "$righe" }, { $group: { _id: "$righe.prodottoId", pezzi: { $sum: "$righe.qta" } } }, { $sort: { pezzi: -1 } }, { $limit: 5 }, { $lookup: { from: "prodotti", localField: "_id", foreignField: "_id", as: "prodotto" } }, { $project: { _id: 0, prodotto: { $first: "$prodotto.nome" }, pezzi: 1 } } ])
+[
+  { pezzi: 739, prodotto: 'Atlante del cielo' },
+  { pezzi: 714, prodotto: 'Zaino da trekking' },
+  { pezzi: 708, prodotto: 'Bollitore elettrico' },
+  { pezzi: 692, prodotto: 'Aspirapolvere robot' },
+  { pezzi: 692, prodotto: 'Guida alle Dolomiti' }
+]
+[direct: mongos] labdb> db.vendite.aggregate([ { $group: { _id: "$clienteId", speso: { $sum: "$totale" } } }, { $sort: { speso: -1 } }, { $limit: 3 }, { $lookup: { ffrom: "clienti", localField: "_id", foreignField: "_id", as: "c" } }, { $unwind: "$c" }, { $project: { _id: 0, cliente: { $concat: ["$c.nome", " ", "$c.cognome"] }, citta: "$c.indirizzo.citta", speso: 1 } } ])
+[
+  {
+    speso: Decimal128('76399.70'),
+    cliente: 'Andrea Rossi',
+    citta: 'Napoli'
+  },
+  {
+    speso: Decimal128('65122.40'),
+    cliente: 'Luca Colombo',
+    citta: 'Milano'
+  },
+  {
+    speso: Decimal128('60443.60'),
+    cliente: 'Francesca Marino',
+    citta: 'Milano'
+  }
+]
+[direct: mongos] labdb> db.vendite.aggregate([ { $facet: { perCanale: [ { $group: { _id: "$canale", n: { $sum: 1 } } }, { $sort: { n: -1 } } ], perFascia: [ { $bucke$bucket: { groupBy: "$totale", boundaries: [0, 50, 100, 250, 500, 1000, 5000], default: "altro", output: { n: { $sum: 1 } } } } ] } } ])
+[
+  {
+    perCanale: [
+      { _id: 'web', n: 2450 },
+      { _id: 'telefono', n: 1241 },
+      { _id: 'negozio', n: 1226 }
+    ],
+    perFascia: [
+      { _id: 0, n: 507 },
+      { _id: 50, n: 565 },
+      { _id: 100, n: 1124 },
+      { _id: 250, n: 1141 },
+      { _id: 500, n: 976 },
+      { _id: 1000, n: 604 }
+    ]
+  }
+]
+[direct: mongos] labdb> db.vendite.aggregate([ { $match: { stato: "consegnata" } }, { $group: { _id: { $dateToString: { format: "%Y-%m", date: "$data" } }, incasso: { $sum: "$totale" }, vendite: { $sum: 1 } } }, { $merge: { into: "riepilogo_mensile", whenMatched: "replace", whenNotMatched: "insert" } } ])
+
+[direct: mongos] labdb> db.riepilogo_mensile.find().sort({ _id: 1 }).limit(3)
+[
+  { _id: '2026-01', incasso: Decimal128('102826.40'), vendite: 246 },
+  { _id: '2026-02', incasso: Decimal128('105804.70'), vendite: 211 },
+  { _id: '2026-03', incasso: Decimal128('134028.90'), vendite: 260 }
+]
+[direct: mongos] labdb> const e = db.vendite.explain().aggregate([ { $match: { stato: "consegnata" } }, { $group: { _id: "$canale", n: { $sum: 1 } } } ])
+
+[direct: mongos] labdb> print("fusione:", e.mergeType); print("su ogni shard:", JSON.stringify(e.splitPipeline.shardsPart)); print("fusione finale:", JSON.stringify(e.splitPipeline.mergerPart))
+fusione: mongos
+su ogni shard: [{"$match":{"stato":{"$eq":"consegnata"}}},{"$group":{"_id":"$canale","n":{"$sum":{"$const":1}}}}]
+fusione finale: [{"$mergeCursors":{"lsid":{"id":"35cc4c40-bd72-4f2d-af97-82528afcb59f","uid":"BRQXuKSknFIiWtLOGANYt+LixwuwH937Ar257mDm79I="},"compareWholeSortKey":false,"tailableMode":"normal","nss":"labdb.vendite","allowPartialResults":false,"recordRemoteOpWaitTime":false,"requestQueryStatsFromRemotes":false}},{"$group":{"_id":"$$ROOT._id","n":{"$sum":"$$ROOT.n"},"$doingMerge":true}}]
+
+[direct: mongos] labdb> const e2 = db.vendite.explain().aggregate([ { $match: { clienteId: 7 } }, { $group: { _id: "$canale", n: { $sum: 1 } } } ])
+
+[direct: mongos] labdb> print("con la shard key:", e2.splitPipeline === null ? "nessuna divisione" : "divisa", "- shard:", Object.keys(e2.shards).length)
+con la shard key: nessuna divisione - shard: 1
+
+[direct: mongos] labdb>
+
+```
+
+## Parte 9 — Transazioni
+
+**Contatori delle transazioni del router, prima** (in un altro terminale, o uscendo dalla shell):
+
+```bash
+sh_eval 'const t = db.serverStatus().transactions; print("avviate:", t.totalStarted, "- confermate:", t.totalCommitted, "- annullate:", t.totalAborted); printjson(Object.fromEntries(Object.entries(t.commitTypes).map(([k, v]) => [k, v.successful])))'
+```
+
+Annota i valori. Poi **rientra nella shell** (i comandi che seguono sono JavaScript, non comandi della VM) e restaci fino alla fine del 9.4: la sessione `s` serve a tutti i passi.
+
+```bash
+app_shell
+```
+
+### 9.1 Una transazione riuscita
+
+```js
+const s = db.getMongo().startSession()
+const sp = s.getDatabase("labdb").prodotti, sv = s.getDatabase("labdb").vendite
+s.withTransaction(() => { const r = sp.updateOne({ _id: "P003", giacenza: { $gte: 2 } }, { $inc: { giacenza: -2 } }); if (r.modifiedCount !== 1) throw new Error("giacenza insufficiente per P003"); sv.insertOne({ clienteId: 12, data: new Date(), stato: "in lavorazione", canale: "web", righe: [ { prodottoId: "P003", qta: 2, prezzo: NumberDecimal("79.90") } ], totale: NumberDecimal("159.80") }) }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } })
+db.prodotti.findOne({ _id: "P003" }, { giacenza: 1 })
+db.vendite.countDocuments({ clienteId: 12, stato: "in lavorazione", "righe.prodottoId": "P003", data: { $gte: ISODate("2026-10-01") } })
+```
+
+✅ Giacenza di P003 da 35 a **33**; la nuova vendita esiste (**1**).
+
+### 9.2 Una transazione annullata
+
+```js
+db.vendite.countDocuments({ clienteId: 13 })
+try { s.withTransaction(() => { sv.insertOne({ clienteId: 13, data: new Date(), stato: "in lavorazione", canale: "web", righe: [ { prodottoId: "P007", qta: 1, prezzo: NumberDecimal("59.90") } ], totale: NumberDecimal("59.90") }); const r = sp.updateOne({ _id: "P007", giacenza: { $gte: 1 } }, { $inc: { giacenza: -1 } }); if (r.modifiedCount !== 1) throw new Error("giacenza insufficiente per P007") }) } catch (e) { print("transazione annullata:", e.message) }
+db.vendite.countDocuments({ clienteId: 13 })
+```
+
+✅ `transazione annullata: giacenza insufficiente per P007` (P007 è esaurito); il conteggio del cliente 13 è **uguale prima e dopo**: anche l'inserimento, eseguito per primo, è stato annullato.
+
+### 9.3 Isolamento: le modifiche si vedono solo dopo il commit
+
+```js
+s.startTransaction({ readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } })
+sp.updateOne({ _id: "P004" }, { $inc: { giacenza: -1 } })
+print("dentro la transazione:", sp.findOne({ _id: "P004" }).giacenza, "- fuori:", db.prodotti.findOne({ _id: "P004" }).giacenza)
+s.commitTransaction()
+print("dopo il commit:", db.prodotti.findOne({ _id: "P004" }).giacenza)
+s.startTransaction()
+sp.updateOne({ _id: "P004" }, { $set: { giacenza: 0 } })
+s.abortTransaction()
+print("dopo l'abort:", db.prodotti.findOne({ _id: "P004" }).giacenza)
+```
+
+✅ `dentro: 19 - fuori: 20`, `dopo il commit: 19`, `dopo l'abort: 19`.
+
+### 9.4 Una transazione su entrambi gli shard
+
+```js
+db.vendite.find({ clienteId: { $in: [1, 2, 3, 4, 5, 6] } }).explain().queryPlanner.winningPlan.shards.length
+s.withTransaction(() => { sv.updateMany({ clienteId: { $in: [1, 2, 3, 4, 5, 6] } }, { $set: { verificata: true } }); sp.updateOne({ _id: "P001" }, { $set: { ultimaVerifica: new Date() } }) })
+db.vendite.countDocuments({ verificata: true })
+s.endSession()
+exit
+```
+
+✅ `2` shard coinvolti; **603** vendite marcate.
+
+**Contatori, dopo:**
+
+```bash
+sh_eval 'const t = db.serverStatus().transactions; print("avviate:", t.totalStarted, "- confermate:", t.totalCommitted, "- annullate:", t.totalAborted); printjson(Object.fromEntries(Object.entries(t.commitTypes).map(([k, v]) => [k, v.successful])))'
+```
+
+✅ Nel collaudo: avviate da 1298 a **1313**, confermate da 1298 a **1311**, annullate da 0 a **2** (la 9.2 e l'`abortTransaction` della 9.3); `twoPhaseCommit` da 0 a **1**: è la 9.4, il commit coordinato su più shard. Le altre sono `singleShard` (da 1297 a 1309). I valori di partenza dipendono dalla storia del router: conta la differenza.
+
+📋 **Output della Parte 9** (contatori prima e dopo compresi).
+
+```bash
+
+[direct: mongos] labdb> exit
+azureuserdgs@azmdb01:~$ sh_eval 'const t = db.serverStatus().transactions; print("avviate:", t.totalStarted, "- confermate:", t.totalCommitted, "- annullate:", t.totalAborted); printjson(Object.fromEntries(Object.entries(t.commitTypes).map(([k, v]) => [k, v.successful])))'
+avviate: Long('1298') - confermate: Long('1298') - annullate: Long('0')
+{
+  noShards: Long('0'),
+  singleShard: Long('1297'),
+  singleWriteShard: Long('1'),
+  readOnly: Long('0'),
+  twoPhaseCommit: Long('0'),
+  recoverWithToken: Long('0')
+}
+azureuserdgs@azmdb01:~$ app_shell
+Current Mongosh Log ID: 6af9c6d9528711f265cd2750
+Connecting to:          mongodb://<credentials>@127.0.0.1:27200/labdb?directConnection=true&serverSelectionTimeoutMS=2000&tls=true&tlsCAFile=%2Fetc%2Fmongo%2Ftls%2Fca.pem&authSource=labdb&appName=mongosh+2.11.1
+Using MongoDB:          8.0.32
+Using Mongosh:          2.11.1
+
+For mongosh info see: https://www.mongodb.com/docs/mongodb-shell/
+
+[direct: mongos] labdb> const s = db.getMongo().startSession()
+
+[direct: mongos] labdb> const sp = s.getDatabase("labdb").prodotti, sv = s.getDatabase("labdb").vendite
+
+[direct: mongos] labdb> s.withTransaction(() => { const r = sp.updateOne({ _id: "P003", giacenza: { $gte: 2 } }, { $inc: { giacenza: -2 } }); if (r.modifiedCount !== 1) throw new Error("giacenza insufficiente per P003"); sv.insertOne({ clienteId: 12, data: new Date(), stato: "in lavorazione", canale: "web", righe: [ {prodottoId: "P003", qta: 2, prezzo: NumberDecimal("79.90") } ], totale: NumberDecimal("159.80") }) }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } })
+
+[direct: mongos] labdb> db.prodotti.findOne({ _id: "P003" }, { giacenza: 1 })
+{ _id: 'P003', giacenza: 33 }
+[direct: mongos] labdb> db.vendite.countDocuments({ clienteId: 12, stato: "in lavorazione", "righe.prodottoId": "P003", data: { $gte: ISODate("2026-10-01") } })
+1
+[direct: mongos] labdb> db.vendite.countDocuments({ clienteId: 13 })
+90
+[direct: mongos] labdb> try { s.withTransaction(() => { sv.insertOne({ clienteId: 13, data: new Date(), stato: "in lavorazione", canale: "web", righe: [ {prodottoId: "P007", qta: 1, prezzo: NumberDecimal("59.90") } ], totale: NumberDecimal("59.90") }); const r = sp.updateOne({ _id: "P007", giacenza: { $gte: 1 } }, { $inc: { giacgiacenza: -1 } }); if (r.modifiedCount !== 1) throw new Error("giacenza insufficiente per P007") }) } catch (e) { print("transazione annullata:", e.message) }
+transazione annullata: giacenza insufficiente per P007
+
+[direct: mongos] labdb> db.vendite.countDocuments({ clienteId: 13 })
+90
+[direct: mongos] labdb> s.startTransaction({ readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } })
+
+[direct: mongos] labdb> sp.updateOne({ _id: "P004" }, { $inc: { giacenza: -1 } })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 1,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> print("dentro la transazione:", sp.findOne({ _id: "P004" }).giacenza, "- fuori:", db.prodotti.findOne({ _id: "P004" }).giacenza)
+dentro la transazione: 19 - fuori: 20
+
+[direct: mongos] labdb> s.commitTransaction()
+
+[direct: mongos] labdb> print("dopo il commit:", db.prodotti.findOne({ _id: "P004" }).giacenza)
+dopo il commit: 19
+
+[direct: mongos] labdb> s.startTransaction()
+
+[direct: mongos] labdb> sp.updateOne({ _id: "P004" }, { $set: { giacenza: 0 } })
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 1,
+  upsertedCount: 0
+}
+[direct: mongos] labdb> s.abortTransaction()
+
+[direct: mongos] labdb> print("dopo l'abort:", db.prodotti.findOne({ _id: "P004" }).giacenza)
+dopo l'abort: 19
+
+[direct: mongos] labdb> db.vendite.find({ clienteId: { $in: [1, 2, 3, 4, 5, 6] } }).explain().queryPlanner.winningPlan.shards.length
+2
+[direct: mongos] labdb> s.withTransaction(() => { sv.updateMany({ clienteId: { $in: [1, 2, 3, 4, 5, 6] } }, { $set: { verificata: true } }); sp.updateOne({ _id: "P001" }, { $set: { ultimaVerifica: new Date() } }) })
+
+[direct: mongos] labdb> db.vendite.countDocuments({ verificata: true })
+603
+[direct: mongos] labdb> s.endSession()
+
+[direct: mongos] labdb> exit
+azureuserdgs@azmdb01:~$ sh_eval 'const t = db.serverStatus().transactions; print("avviate:", t.totalStarted, "- confermate:", t.totalCommitted, "- annullate:", t.totalAborted); printjson(Object.fromEntries(Object.entries(t.commitTypes).map(([k, v]) => [k, v.successful])))'
+avviate: Long('1313') - confermate: Long('1311') - annullate: Long('2')
+{
+  noShards: Long('0'),
+  singleShard: Long('1309'),
+  singleWriteShard: Long('1'),
+  readOnly: Long('0'),
+  twoPhaseCommit: Long('1'),
+  recoverWithToken: Long('0')
+}
+azureuserdgs@azmdb01:~$
+```
+
+## Parte 10 — bulkWrite e write concern
+
+```bash
+app_shell
+```
+
+```js
+db.prodotti.bulkWrite([ { insertOne: { document: { _id: "P100", nome: "Prodotto bulk", categoria: "Prove", prezzo: NumberDecimal("1.00"), giacenza: 10 } } }, { updateOne: { filter: { _id: "P002" }, update: { $inc: { giacenza: 10 } } } }, { updateMany: { filter: { categoria: "Ufficio" }, update: { $set: { reparto: "B" } } } }, { replaceOne: { filter: { _id: "P100" }, replacement: { nome: "Prodotto bulk sostituito", categoria: "Prove", prezzo: NumberDecimal("2.00"), giacenza: 5 } } }, { deleteOne: { filter: { _id: "P100" } } } ])
+db.prodotti.bulkWrite([ { insertOne: { document: { _id: "P101" } } }, { insertOne: { document: { _id: "P101" } } }, { insertOne: { document: { _id: "P102" } } } ])
+db.prodotti.bulkWrite([ { insertOne: { document: { _id: "P103" } } }, { insertOne: { document: { _id: "P103" } } }, { insertOne: { document: { _id: "P104" } } } ], { ordered: false })
+db.prodotti.find({ _id: { $in: ["P101", "P102", "P103", "P104"] } }, { _id: 1 })
+db.prodotti.deleteMany({ _id: { $in: ["P101", "P102", "P103", "P104"] } })
+db.prodotti.insertOne({ _id: "P105" }, { writeConcern: { w: "majority", wtimeout: 5000 } })
+db.prodotti.insertOne({ _id: "P106" }, { writeConcern: { w: 4, wtimeout: 3000 } })
+db.prodotti.deleteMany({ _id: { $in: ["P105", "P106"] } })
+exit
+```
+
+✅ Primo `bulkWrite`: `insertedCount: 1`, `matchedCount: 6`, `modifiedCount: 6` (P002, i 4 prodotti Ufficio, la sostituzione), `deletedCount: 1`. Ordinato: errore, inserito solo P101. Non ordinato: errore, inseriti P103 e P104. `w: "majority"`: ok. `w: 4` su uno shard di 3 nodi: `MongoWriteConcernError[UnsatisfiableWriteConcern]: Not enough data-bearing nodes` (codice `100`). Attenzione: il risultato contiene `n: 1` e l'ultimo `deleteMany` cancella **2** documenti: P106 **è stato scritto** comunque. L'errore dice che la conferma richiesta non è ottenibile, non che la scrittura è stata annullata.
+
+📋 **Output della Parte 10.**
+
+```bash
+azureuserdgs@azmdb01:~$ app_shell
+Current Mongosh Log ID: 6af9c8687cefece7b5662ddf
+Connecting to:          mongodb://<credentials>@127.0.0.1:27200/labdb?directConnection=true&serverSelectionTimeoutMS=2000&tls=true&tlsCAFile=%2Fetc%2Fmongo%2Ftls%2Fca.pem&authSource=labdb&appName=mongosh+2.11.1
+Using MongoDB:          8.0.32
+Using Mongosh:          2.11.1
+
+For mongosh info see: https://www.mongodb.com/docs/mongodb-shell/
+
+[direct: mongos] labdb> db.prodotti.bulkWrite([ { insertOne: { document: { _id: "P100", nome: "Prodotto bulk", categoria: "Prove", prezzo: NumberDecimal("1.00"), giagiacenza: 10 } } }, { updateOne: { filter: { _id: "P002" }, update: { $inc: { giacenza: 10 } } } }, { updateMany: { filter: { categoria: "Ufficio" }, update: { $set: { reparto: "B" } } } }, { replaceOne: { filter: { _id: "P100" }, replacement: { nome: "Prodotto bulk sostituito", categoria: "Prove", prezzo: NumberDecimal("2.00"), giacenza: 5 } } }, { deleteOne: { filter: { _id: "P100" } } } ])
+{
+  acknowledged: true,
+  insertedCount: 1,
+  insertedIds: { '0': 'P100' },
+  matchedCount: 6,
+  modifiedCount: 6,
+  deletedCount: 1,
+  upsertedCount: 0,
+  upsertedIds: {}
+}
+[direct: mongos] labdb> db.prodotti.bulkWrite([ { insertOne: { document: { _id: "P101" } } }, { insertOne: { document: { _id: "P101" } } }, { insertOne: { document: { _id: "P102" } } } ])
+Uncaught:
+MongoBulkWriteError: E11000 duplicate key error collection: labdb.prodotti index: _id_ dup key: { _id: "P101" }
+Result: BulkWriteResult {
+  insertedCount: 1,
+  matchedCount: 0,
+  modifiedCount: 0,
+  deletedCount: 0,
+  upsertedCount: 0,
+  upsertedIds: {},
+  insertedIds: { '0': 'P101' }
+}
+Write Errors: [
+  WriteError {
+    err: {
+      index: 1,
+      code: 11000,
+      errmsg: 'E11000 duplicate key error collection: labdb.prodotti index: _id_ dup key: { _id: "P101" }',
+      errInfo: undefined,
+      op: { _id: 'P101' }
+    }
+  }
+]
+[direct: mongos] labdb> db.prodotti.bulkWrite([ { insertOne: { document: { _id: "P103" } } }, { insertOne: { document: { _id: "P103" } } }, { insertOne: { document: { _id: "P104" } } } ], { ordered: false })
+Uncaught:
+MongoBulkWriteError: E11000 duplicate key error collection: labdb.prodotti index: _id_ dup key: { _id: "P103" }
+Result: BulkWriteResult {
+  insertedCount: 2,
+  matchedCount: 0,
+  modifiedCount: 0,
+  deletedCount: 0,
+  upsertedCount: 0,
+  upsertedIds: {},
+  insertedIds: { '0': 'P103', '2': 'P104' }
+}
+Write Errors: [
+  WriteError {
+    err: {
+      index: 1,
+      code: 11000,
+      errmsg: 'E11000 duplicate key error collection: labdb.prodotti index: _id_ dup key: { _id: "P103" }',
+      errInfo: undefined,
+      op: { _id: 'P103' }
+    }
+  }
+]
+[direct: mongos] labdb> db.prodotti.find({ _id: { $in: ["P101", "P102", "P103", "P104"] } }, { _id: 1 })
+[ { _id: 'P101' }, { _id: 'P103' }, { _id: 'P104' } ]
+[direct: mongos] labdb> db.prodotti.deleteMany({ _id: { $in: ["P101", "P102", "P103", "P104"] } })
+{ acknowledged: true, deletedCount: 3 }
+[direct: mongos] labdb> db.prodotti.insertOne({ _id: "P105" }, { writeConcern: { w: "majority", wtimeout: 5000 } })
+{ acknowledged: true, insertedId: 'P105' }
+[direct: mongos] labdb> db.prodotti.insertOne({ _id: "P106" }, { writeConcern: { w: 4, wtimeout: 3000 } })
+Uncaught:
+MongoWriteConcernError[UnsatisfiableWriteConcern]: UnsatisfiableWriteConcern: Not enough data-bearing nodes; Error details: { writeConcern: { w: 4, wtimeout: 3000, provenance: "clientSupplied" } } at sh2
+Additional information: {}
+Result: {
+  n: 1,
+  writeConcernError: {
+    code: 100,
+    codeName: 'UnsatisfiableWriteConcern',
+    errmsg: 'UnsatisfiableWriteConcern: Not enough data-bearing nodes; Error details: { writeConcern: { w: 4, wtimeout: 3000, provenance: "clientSupplied" } } at sh2',
+    errInfo: {}
+  },
+  ok: 1,
+  '$clusterTime': {
+    clusterTime: Timestamp({ t: 1794754712, i: 1 }),
+    signature: {
+      hash: Binary.createFromBase64('Ep19SVwiOkkRc48gMJ04TeXyW4Q=', 0),
+      keyId: Long('7691223719082983439')
+    }
+  },
+  operationTime: Timestamp({ t: 1794754712, i: 1 })
+}
+[direct: mongos] labdb> db.prodotti.deleteMany({ _id: { $in: ["P105", "P106"] } })
+{ acknowledged: true, deletedCount: 2 }
+[direct: mongos] labdb>
+```
+
+---
+
+# Blocco E
+
+## Parte 11 — Validazione dello schema
+
+```bash
+app_shell
+```
+
+```js
+db.createCollection("recensioni", { validator: { $jsonSchema: { bsonType: "object", required: ["prodottoId", "clienteId", "voto"], properties: { prodottoId: { bsonType: "string", pattern: "^P[0-9]{3}$" }, clienteId: { bsonType: "int" }, voto: { bsonType: "int", minimum: 1, maximum: 5 }, testo: { bsonType: "string", maxLength: 500 } } } }, validationLevel: "strict", validationAction: "error" })
+db.recensioni.insertOne({ prodottoId: "P017", clienteId: 3, voto: 5, testo: "Chiaro e pratico" })
+db.recensioni.insertOne({ prodottoId: "P017", clienteId: 4, voto: 6 })
+db.recensioni.insertOne({ prodottoId: "P017", voto: 4 })
+db.recensioni.insertOne({ prodottoId: "X1", clienteId: 5, voto: 4 })
+db.runCommand({ collMod: "recensioni", validationAction: "warn" })
+exit
+```
+
+✅ La collezione si crea; la prima recensione entra; le altre tre vengono rifiutate con `Document failed validation` e un dettaglio (`Additional information`) che indica il campo e la regola violata. `collMod` come appuser: `MongoServerError[Unauthorized]: not authorized on labdb to execute command { collMod: "recensioni", ... }` (confermato: `readWrite` non comprende la modifica delle opzioni di una collezione).
+
+**Come amministratore**, poi di nuovo come appuser:
+
+```bash
+sh_eval 'printjson(db.getSiblingDB("labdb").runCommand({ collMod: "recensioni", validationAction: "warn" }))'
+app_eval 'db.recensioni.insertOne({ prodottoId: "P017", clienteId: 4, voto: 6 }); print("documenti non validi:", db.recensioni.countDocuments({ $nor: [ db.getCollectionInfos({ name: "recensioni" })[0].options.validator ] }))'
+sh_eval 'printjson(db.getSiblingDB("labdb").runCommand({ collMod: "recensioni", validationAction: "error" }))'
+```
+
+✅ `ok: 1`; con `warn` il documento non valido entra (`documenti non validi: 1`): i documenti che non rispettano lo schema si trovano con `$nor` sul validatore. Poi si torna a `error`.
+
+📋 **Output della Parte 11.**
+
+```bash
+azureuserdgs@azmdb01:~$ source ~/mongo-lab/04-crud/funzioni-crud.sh
+azureuserdgs@azmdb01:~$ app_shell
+Current Mongosh Log ID: 6af9cb3986d1800f098ef806
+Connecting to:          mongodb://<credentials>@127.0.0.1:27200/labdb?directConnection=true&serverSelectionTimeoutMS=2000&tls=true&tlsCAFile=%2Fetc%2Fmongo%2Ftls%2Fca.pem&authSource=labdb&appName=mongosh+2.11.1
+Using MongoDB:          8.0.32
+Using Mongosh:          2.11.1
+
+For mongosh info see: https://www.mongodb.com/docs/mongodb-shell/
+
+[direct: mongos] labdb> db.createCollection("recensioni", { validator: { $jsonSchema: { bsonType: "object", required: ["prodottoId", "clienteId", "voto"], properties: { prodottoId: { bsonType: "string", pattern: "^P[0-9]{3}$" }, clienteId: { bsonType: "int" }, voto: { bsonType: "int", minimum: 1, maximum: 5 }, testo: { bsonType: "string", maxLength: 500 } } } }, validationLevel: "strict", validationAction: "error" })
+{ ok: 1 }
+[direct: mongos] labdb> db.recensioni.insertOne({ prodottoId: "P017", clienteId: 3, voto: 5, testo: "Chiaro e pratico" })
+{
+  acknowledged: true,
+  insertedId: ObjectId('6af9cb6486d1800f098ef807')
+}
+[direct: mongos] labdb> db.recensioni.insertOne({ prodottoId: "P017", clienteId: 4, voto: 6 })
+Uncaught:
+MongoServerError: Document failed validation
+Additional information: {
+  failingDocumentId: ObjectId('6af9cb6886d1800f098ef808'),
+  details: {
+    operatorName: '$jsonSchema',
+    schemaRulesNotSatisfied: [
+      {
+        operatorName: 'properties',
+        propertiesNotSatisfied: [
+          {
+            propertyName: 'voto',
+            details: [
+              {
+                operatorName: 'maximum',
+                specifiedAs: { maximum: 5 },
+                reason: 'comparison failed',
+                consideredValue: 6
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+[direct: mongos] labdb> db.recensioni.insertOne({ prodottoId: "P017", voto: 4 })
+Uncaught:
+MongoServerError: Document failed validation
+Additional information: {
+  failingDocumentId: ObjectId('6af9cb6c86d1800f098ef809'),
+  details: {
+    operatorName: '$jsonSchema',
+    schemaRulesNotSatisfied: [
+      {
+        operatorName: 'required',
+        specifiedAs: { required: [ 'prodottoId', 'clienteId', 'voto' ] },
+        missingProperties: [ 'clienteId' ]
+      }
+    ]
+  }
+}
+[direct: mongos] labdb> db.recensioni.insertOne({ prodottoId: "X1", clienteId: 5, voto: 4 })
+Uncaught:
+MongoServerError: Document failed validation
+Additional information: {
+  failingDocumentId: ObjectId('6af9cb6f86d1800f098ef80a'),
+  details: {
+    operatorName: '$jsonSchema',
+    schemaRulesNotSatisfied: [
+      {
+        operatorName: 'properties',
+        propertiesNotSatisfied: [
+          {
+            propertyName: 'prodottoId',
+            details: [
+              {
+                operatorName: 'pattern',
+                specifiedAs: { pattern: '^P[0-9]{3}$' },
+                reason: 'regular expression did not match',
+                consideredValue: 'X1'
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+[direct: mongos] labdb> db.runCommand({ collMod: "recensioni", validationAction: "warn" })
+MongoServerError[Unauthorized]: not authorized on labdb to execute command { collMod: "recensioni", validationAction: "warn", lsid: { id: UUID("74ba76e7-39e8-4543-9083-4da7c734c953") }, $clusterTime: { clusterTime: Timestamp(1794755439, 1), signature: { hash: BinData(0, 1414F4710A03078FF9A72CBD119D1C686B076EB3), keyId: 7691223719082983439 } }, $db: "labdb" }
+[direct: mongos] labdb> exit
+azureuserdgs@azmdb01:~$ sh_eval 'printjson(db.getSiblingDB("labdb").runCommand({ collMod: "recensioni", validationAction: "warn" }))'
+{
+  ok: 1,
+  '$clusterTime': {
+    clusterTime: Timestamp({ t: 1794755452, i: 7 }),
+    signature: {
+      hash: Binary.createFromBase64('gVvMtBfe8Q3YyVnZGgcINRxaz1Y=', 0),
+      keyId: Long('7691223719082983439')
+    }
+  },
+  operationTime: Timestamp({ t: 1794755452, i: 7 })
+}
+azureuserdgs@azmdb01:~$ app_eval 'db.recensioni.insertOne({ prodottoId: "P017", clienteId: 4, voto: 6 }); print("documenti non validi:", db.recensioni.countDocuments({ $nor: [ db.getCollectionInfos({ name: "recensioni" })[0].options.validator ] }))'
+documenti non validi: 2
+azureuserdgs@azmdb01:~$ sh_eval 'printjson(db.getSiblingDB("labdb").runCommand({ collMod: "recensioni", validationAction: "error" }))'
+{
+  ok: 1,
+  '$clusterTime': {
+    clusterTime: Timestamp({ t: 1794755463, i: 7 }),
+    signature: {
+      hash: Binary.createFromBase64('sF/ag4G8aGhcFrwGE9bjdpTk69M=', 0),
+      keyId: Long('7691223719082983439')
+    }
+  },
+  operationTime: Timestamp({ t: 1794755463, i: 7 })
+}
+```
+
+> ✔️ **Chiarito (15/11/2026):** il `2` del primo collaudo dipendeva da una doppia esecuzione della Parte 11. Rieseguita una sola volta su `recensioni` ricreata da zero, la parte ha dato `documenti non validi: 1`, e la collezione conteneva esattamente due documenti: la recensione valida (`clienteId: 3, voto: 5`) e quella entrata con `warn` (`clienteId: 4, voto: 6`).
+>
+> ```bash
+> azureuserdgs@azmdb01:~$ app_eval 'db.recensioni.insertOne({ prodottoId: "P017", clienteId: 4, voto: 6 }); print("documenti non validi:", db.recensioni.countDocuments({ $nor: [ db.getCollectionInfos({ name: "recensioni" })[0].options.validator ] }))'
+> documenti non validi: 1
+> ```
+
+## Parte 12 — Ricerca testuale
+
+```bash
+app_shell
+```
+
+```js
+db.prodotti.createIndex({ nome: "text", descrizione: "text" }, { default_language: "italian", weights: { nome: 3 }, name: "testo_prodotti" })
+db.prodotti.find({ $text: { $search: "montagna" } }, { nome: 1, punteggio: { $meta: "textScore" } }).sort({ punteggio: { $meta: "textScore" } })
+db.prodotti.find({ $text: { $search: "cucinare" } }, { nome: 1 })
+db.prodotti.find({ $text: { $search: "\"senza fili\"" } }, { nome: 1 })
+db.prodotti.find({ $text: { $search: "ufficio -sedia" } }, { nome: 1 })
+db.prodotti.find({ $text: { $search: "per" } }, { nome: 1 })
+db.prodotti.createIndex({ tags: "text" })
+exit
+```
+
+✅ `createIndex` risponde `testo_prodotti`. `montagna`: Guida alle Dolomiti (P019) e Zaino da trekking (P024), entrambi con punteggio `0.6` (Borraccia termica no: «montagna» è solo nei tag, non indicizzati). `cucinare` trova «Cucina regionale» (P018) e «Set di pentole» (P013): radice comune `cucin`. La frase esatta trova solo il Mouse senza fili (P002). `ufficio -sedia` restituisce solo la Stampante laser (P030): la sedia è esclusa. `per` non trova nulla: è una parola vuota (*stop word*) dell'italiano. Il secondo indice testuale viene rifiutato con `MongoServerError[IndexOptionsConflict]: An equivalent index already exists with a different name and options` (seguito dal dettaglio dei due indici): ne è ammesso **uno solo** per collezione.
+
+📋 **Output della Parte 12.**
+
+```bash
+azureuserdgs@azmdb01:~$ app_shell
+Current Mongosh Log ID: 6af9cbf62b71964c6a036da2
+Connecting to:          mongodb://<credentials>@127.0.0.1:27200/labdb?directConnection=true&serverSelectionTimeoutMS=2000&tls=true&tlsCAFile=%2Fetc%2Fmongo%2Ftls%2Fca.pem&authSource=labdb&appName=mongosh+2.11.1
+Using MongoDB:          8.0.32
+Using Mongosh:          2.11.1
+
+For mongosh info see: https://www.mongodb.com/docs/mongodb-shell/
+
+[direct: mongos] labdb> db.prodotti.createIndex({ nome: "text", descrizione: "text" }, { default_language: "italian", weights: { nome: 3 }, name: "testo_prodotti" })
+testo_prodotti
+[direct: mongos] labdb> db.prodotti.find({ $text: { $search: "montagna" } }, { nome: 1, punteggio: { $meta: "textScore" } }).sort({ punteggio: { $meta: "textScore" } })
+[
+  { _id: 'P019', nome: 'Guida alle Dolomiti', punteggio: 0.6 },
+  { _id: 'P024', nome: 'Zaino da trekking', punteggio: 0.6 }
+]
+[direct: mongos] labdb> db.prodotti.find({ $text: { $search: "cucinare" } }, { nome: 1 })
+[
+  { _id: 'P018', nome: 'Cucina regionale' },
+  { _id: 'P013', nome: 'Set di pentole' }
+]
+[direct: mongos] labdb> db.prodotti.find({ $text: { $search: "\"senza fili\"" } }, { nome: 1 })
+[ { _id: 'P002', nome: 'Mouse senza fili' } ]
+[direct: mongos] labdb> db.prodotti.find({ $text: { $search: "ufficio -sedia" } }, { nome: 1 })
+[ { _id: 'P030', nome: 'Stampante laser' } ]
+[direct: mongos] labdb> db.prodotti.find({ $text: { $search: "per" } }, { nome: 1 })
+
+[direct: mongos] labdb> db.prodotti.createIndex({ tags: "text" })
+MongoServerError[IndexOptionsConflict]: An equivalent index already exists with a different name and options. Requested index: { v: 2, key: { _fts: "text", _ftsx: 1 }, name: "tags_text", weights: { tags: 1 }, default_language: "english", language_override: "language", textIndexVersion: 3 }, existing index: { v: 2, key: { _fts: "text", _ftsx: 1 }, name: "testo_prodotti", default_language: "italian", weights: { descrizione: 1, nome: 3 }, language_override: "language", textIndexVersion: 3 }
+[direct: mongos] labdb> exit
+```
+
+## Parte 13 — Change stream
+
+Servono **due terminali SSH** sulla VM.
+
+**Terminale 2**, quello che osserva:
+
+```bash
+source ~/mongo-lab/04-crud/funzioni-crud.sh
+app_shell
+```
+
+```js
+let ultimo = null; const cs = db.vendite.watch([], { fullDocument: "updateLookup" })
+while (true) { const ev = cs.tryNext(); if (ev) { ultimo = ev._id; print(ev.operationType, JSON.stringify(ev.documentKey), ev.updateDescription ? JSON.stringify(ev.updateDescription.updatedFields) : "") } else { sleep(200) } }
+```
+
+**Terminale 1**, quello che scrive:
+
+```bash
+source ~/mongo-lab/04-crud/funzioni-crud.sh
+app_eval 'db.vendite.insertMany([ { clienteId: 1, stato: "prova-cs", totale: NumberDecimal("10.00") }, { clienteId: 2, stato: "prova-cs", totale: NumberDecimal("20.00") } ]); db.vendite.updateOne({ clienteId: 1, stato: "prova-cs" }, { $set: { totale: NumberDecimal("12.00") } }); db.vendite.deleteMany({ stato: "prova-cs" }); print("fatto")'
+```
+
+✅ Nel terminale 2: due `insert`, un `update` (con `{"totale":...}`), due `delete`. In `documentKey` compaiono **`clienteId` e `_id`**: nelle collezioni distribuite l'evento porta con sé la shard key. Gli eventi arrivano da entrambi gli shard, uniti dal router.
+
+**Ripresa dopo un'interruzione.** Nel terminale 2 premi `Ctrl+C` **una sola volta** (la shell resta aperta, con il prompt `labdb>`).
+
+> ⚠️ La variabile `ultimo` esiste solo in questa shell. Se la shell si chiude o la connessione SSH cade, il *resume token* è perso: riparti dall'inizio della Parte 13.
+
+**Solo dopo aver fermato il ciclo**, nel terminale 1 (se il ciclo è ancora attivo, gli eventi vengono visti subito e non resta nulla da recuperare):
+
+```bash
+app_eval 'db.vendite.insertOne({ clienteId: 3, stato: "prova-cs2" }); db.vendite.deleteMany({ stato: "prova-cs2" }); print("fatto mentre nessuno guardava")'
+```
+
+Nel terminale 2:
+
+```js
+const cs2 = db.vendite.watch([], { resumeAfter: ultimo }); for (let i = 0; i < 30; i++) { const ev = cs2.tryNext(); if (ev) print("recuperato:", ev.operationType, JSON.stringify(ev.documentKey)); else sleep(200) }
+exit
+```
+
+✅ `recuperato: insert` e `recuperato: delete`: con il *resume token* l'osservatore riprende dal punto in cui si era fermato, senza perdere eventi (finché restano nell'oplog).
+
+📋 **Output di entrambi i terminali.**
+
+Terminale 2 (collaudo su `vendite` ricreata vuota e distribuita):
+
+```bash
+[direct: mongos] labdb> let ultimo = null; const cs = db.vendite.watch([], { fullDocument: "updateLookup" })
+
+[direct: mongos] labdb> while (true) { const ev = cs.tryNext(); if (ev) { ultimo = ev._id; print(ev.operationType, JSON.stringify(ev.documentKey), ev.updateDescription ? JSON.stringify(ev.updateDescription.updatedFields) : "") } else { sleep(200) } }
+insert {"clienteId":1,"_id":"6af9ff04eda4b81dd717402b"}
+insert {"clienteId":2,"_id":"6af9ff04eda4b81dd717402c"}
+update {"clienteId":1,"_id":"6af9ff04eda4b81dd717402b"} {"totale":{"$numberDecimal":"12.00"}}
+delete {"clienteId":2,"_id":"6af9ff04eda4b81dd717402c"}
+delete {"clienteId":1,"_id":"6af9ff04eda4b81dd717402b"}
+^CStopping execution...
+[direct: mongos] labdb> const cs2 = db.vendite.watch([], { resumeAfter: ultimo }); for (let i = 0; i < 30; i++) { const ev = cs2.tryNext(); if (ev) print("recuperato:", ev.operationType, JSON.stringify(ev.documentKey)); else sleep(200) }
+recuperato: insert {"clienteId":3,"_id":"6af9ff402ba106dc7207cde5"}
+recuperato: delete {"clienteId":3,"_id":"6af9ff402ba106dc7207cde5"}
+
+[direct: mongos] labdb>
+```
+
+Terminale 1:
+
+```bash
+azureuserdgs@azmdb01:~$ app_eval 'db.vendite.insertMany([ { clienteId: 1, stato: "prova-cs", totale: NumberDecimal("10.00") }, { clienteId: 2, stato: "prova-cs", totale: NumberDecimal("20.00") } ]); db.vendite.updateOne({ clienteId: 1, stato: "prova-cs" }, { $set: { totale: NumberDecimal("12.00") } }); db.vendite.deleteMany({ stato: "prova-cs" }); print("fatto")'
+
+fatto
+azureuserdgs@azmdb01:~$ app_eval 'db.vendite.insertOne({ clienteId: 3, stato: "prova-cs2" }); db.vendite.deleteMany({ stato: "prova-cs2" }); print("fatto mentre nessuno guardava")'
+fatto mentre nessuno guardava
+```
+
+> ✔️ **Collaudato (15/11/2026):** la ripresa con `resumeAfter` recupera l'`insert` e il `delete` avvenuti dopo il `Ctrl+C`, con `clienteId` e `_id` nel `documentKey`. Confermato anche `Ctrl+C`: una pressione stampa `Stopping execution...` e lascia la shell aperta; una seconda chiede conferma per uscire.
+
+---
+
+# Blocco F
+
+## Parte 14 — Import ed export
+
+📍 VM
+
+```bash
+cd ~/mongo-lab/04-crud
+source ~/mongo-lab/04-crud/funzioni-crud.sh
+
+app_export --collection=prodotti --query='{"categoria":"Libri"}' > libri.json
+wc -l libri.json; head -1 libri.json
+
+app_export --collection=clienti --type=csv --fields=_id,nome,cognome,indirizzo.citta,punti --sort='{"_id":1}' > clienti.csv
+head -4 clienti.csv
+
+app_import --collection=prodotti_import --type=csv --headerline --columnsHaveTypes < prodotti.csv
+app_eval 'db.prodotti_import.aggregate([ { $project: { nome: 1, prezzo: 1, tipoPrezzo: { $type: "$prezzo" }, tipoGiacenza: { $type: "$giacenza" } } } ]).forEach(p => print(p._id, p.nome, p.prezzo, p.tipoPrezzo, p.tipoGiacenza))'
+
+app_import --collection=prodotti_import --type=csv --headerline --columnsHaveTypes < prodotti.csv
+app_import --collection=prodotti_import --type=csv --headerline --columnsHaveTypes --mode=upsert < prodotti.csv
+
+app_import --collection=libri_copia < libri.json
+app_eval 'print("libri_copia:", db.libri_copia.countDocuments(), "- tipo del prezzo:", db.libri_copia.aggregate([ { $limit: 1 }, { $project: { t: { $type: "$prezzo" } } } ]).next().t)'
+```
+
+✅ `exported 6 records`; nel JSON il prezzo compare come `{"$numberDecimal":"12.60"}` (*Extended JSON*: conserva il tipo). Il CSV ha l'intestazione `_id,nome,cognome,indirizzo.citta,punti`. Primo import: `5 document(s) imported successfully`, con tipi `decimal` e `int`. Secondo: cinque righe `continuing through error: E11000 duplicate key error ...`, poi `0 document(s) imported successfully. 5 document(s) failed to import` (`_id` duplicati). Con `--mode=upsert`: nessun errore, ma `0 document(s) imported successfully. 0 document(s) failed to import`: i documenti esistono già e sono identici, quindi non c'è nulla da modificare. `libri_copia: 6`, prezzo `decimal`. Il CSV dei clienti contiene 51 record (i 50 iniziali più Anna).
+
+📋 **Output della Parte 14.**
+
+```bash
+azureuserdgs@azmdb01:~$ cd ~/mongo-lab/04-crud
+azureuserdgs@azmdb01:~/mongo-lab/04-crud$ source ~/mongo-lab/04-crud/funzioni-crud.sh
+azureuserdgs@azmdb01:~/mongo-lab/04-crud$ app_export --collection=prodotti --query='{"categoria":"Libri"}' > libri.json
+2026-11-15T15:18:58.429+0000    connected to: mongodb://[**REDACTED**]@localhost:27200/labdb?authSource=labdb
+2026-11-15T15:18:58.433+0000    exported 6 records
+azureuserdgs@azmdb01:~/mongo-lab/04-crud$ wc -l libri.json; head -1 libri.json
+6 libri.json
+{"_id":"P015","nome":"Il nome della rosa","categoria":"Libri","prezzo":{"$numberDecimal":"12.60"},"giacenza":90,"tags":["romanzo","giallo"],"descrizione":"Romanzo giallo ambientato in un'abbazia medievale"}
+azureuserdgs@azmdb01:~/mongo-lab/04-crud$ app_export --collection=clienti --type=csv --fields=_id,nome,cognome,indirizzo.citta,punti --sort='{"_id":1}' > clienti.csv
+2026-11-15T15:19:09.440+0000    connected to: mongodb://[**REDACTED**]@localhost:27200/labdb?authSource=labdb
+2026-11-15T15:19:09.444+0000    exported 51 records
+azureuserdgs@azmdb01:~/mongo-lab/04-crud$ head -4 clienti.csv
+_id,nome,cognome,indirizzo.citta,punti
+1,Luca,Esposito,Bologna,203
+2,Giulia,Esposito,Torino,67
+3,Elena,Esposito,Milano,255
+azureuserdgs@azmdb01:~/mongo-lab/04-crud$ app_import --collection=prodotti_import --type=csv --headerline --columnsHaveTypes < prodotti.csv
+2026-11-15T15:19:37.581+0000    connected to: mongodb://[**REDACTED**]@localhost:27200/labdb?authSource=labdb
+2026-11-15T15:19:37.663+0000    5 document(s) imported successfully. 0 document(s) failed to import.
+azureuserdgs@azmdb01:~/mongo-lab/04-crud$ app_eval 'db.prodotti_import.aggregate([ { $project: { nome: 1, prezzo: 1, tipoPrezzo: { $type: "$prezzo" }, tipoGiacenza: { $type: "$giacenza" } } } ]).forEach(p => print(p._id, p.nome, p.prezzo, p.tipoPrezzo, p.tipoGiacenza))'
+P031 Chiavetta USB 64 GB Decimal128('12.90') decimal int
+P032 Tostapane Decimal128('34.50') decimal int
+P033 Il Gattopardo Decimal128('13.00') decimal int
+P034 Pallone da calcio Decimal128('24.99') decimal int
+P035 Raccoglitore ad anelli Decimal128('4.20') decimal int
+azureuserdgs@azmdb01:~/mongo-lab/04-crud$ app_import --collection=prodotti_import --type=csv --headerline --columnsHaveTypes < prodotti.csv
+2026-11-15T15:19:50.776+0000    connected to: mongodb://[**REDACTED**]@localhost:27200/labdb?authSource=labdb
+2026-11-15T15:19:50.781+0000    continuing through error: E11000 duplicate key error collection: labdb.prodotti_import index: _id_ dup key: { _id: "P031" }
+2026-11-15T15:19:50.781+0000    continuing through error: E11000 duplicate key error collection: labdb.prodotti_import index: _id_ dup key: { _id: "P032" }
+2026-11-15T15:19:50.781+0000    continuing through error: E11000 duplicate key error collection: labdb.prodotti_import index: _id_ dup key: { _id: "P033" }
+2026-11-15T15:19:50.781+0000    continuing through error: E11000 duplicate key error collection: labdb.prodotti_import index: _id_ dup key: { _id: "P034" }
+2026-11-15T15:19:50.781+0000    continuing through error: E11000 duplicate key error collection: labdb.prodotti_import index: _id_ dup key: { _id: "P035" }
+2026-11-15T15:19:50.781+0000    0 document(s) imported successfully. 5 document(s) failed to import.
+azureuserdgs@azmdb01:~/mongo-lab/04-crud$ app_import --collection=prodotti_import --type=csv --headerline --columnsHaveTypes --mode=upsert < prodotti.csv
+2026-11-15T15:19:55.543+0000    connected to: mongodb://[**REDACTED**]@localhost:27200/labdb?authSource=labdb
+2026-11-15T15:19:55.546+0000    0 document(s) imported successfully. 0 document(s) failed to import.
+azureuserdgs@azmdb01:~/mongo-lab/04-crud$ app_import --collection=libri_copia < libri.json
+2026-11-15T15:20:00.265+0000    connected to: mongodb://[**REDACTED**]@localhost:27200/labdb?authSource=labdb
+2026-11-15T15:20:00.340+0000    6 document(s) imported successfully. 0 document(s) failed to import.
+azureuserdgs@azmdb01:~/mongo-lab/04-crud$ app_eval 'print("libri_copia:", db.libri_copia.countDocuments(), "- tipo del prezzo:", db.libri_copia.aggregate([ { $limit: 1 }, { $project: { t: { $type: "$prezzo" } } } ]).next().t)'
+libri_copia: 6 - tipo del prezzo: decimal
+```
+
+## Parte 15 — Pulizia
+
+```bash
+app_eval '["clienti", "prodotti", "vendite", "recensioni", "riepilogo_mensile", "prodotti_import", "libri_copia"].forEach(n => print(n, db.getCollection(n).drop())); print("restano:", db.getCollectionNames().sort().join(", "))'
+sh_eval 'print("vendite ancora distribuita?", db.getSiblingDB("config").collections.findOne({ _id: "labdb.vendite" }) !== null)'
+rm ~/mongo-lab/04-crud/libri.json ~/mongo-lab/04-crud/clienti.csv
+```
+
+✅ Sette volte `true`; `restano: eventi, ordini`; `vendite ancora distribuita? false`: il `drop` eseguito da appuser elimina anche i metadati di distribuzione (confermato).
+
+📋 **Output della Parte 15.**
+
+```bash
+azureuserdgs@azmdb01:~/mongo-lab/04-crud$ app_eval '["clienti", "prodotti", "vendite", "recensioni", "riepilogo_mensile", "prodotti_import", "libri_copia"].forEach(n => print(n, db.getCollection(n).drop())); print("restano:", db.getCollectionNames().sort().join(", "))'
+clienti true
+prodotti true
+vendite true
+recensioni true
+riepilogo_mensile true
+prodotti_import true
+libri_copia true
+restano: eventi, ordini
+azureuserdgs@azmdb01:~/mongo-lab/04-crud$ sh_eval 'print("vendite ancora distribuita?", db.getSiblingDB("config").collections.findOne({ _id: "labdb.vendite" }) !== null)'
+vendite ancora distribuita? false
+azureuserdgs@azmdb01:~/mongo-lab/04-crud$ rm ~/mongo-lab/04-crud/libri.json ~/mongo-lab/04-crud/clienti.csv
+```
+
+> Per ripetere il laboratorio: Parte 2 (distribuire `vendite`, poi caricare `dati-crud.js`).
+
+---
+
+## Cosa mandare alla fine
+
+Gli output 📋 di ogni blocco, più ogni differenza dai ✅ e ogni errore inatteso. Segnala anche i passaggi poco chiari o i comandi scomodi da incollare nella shell: la guida definitiva ne terrà conto.
