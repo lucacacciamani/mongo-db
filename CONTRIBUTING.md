@@ -12,7 +12,7 @@ Thanks for your interest in this project! It is a collection of guides and confi
 
 Use one of the issue templates and include:
 
-- the guide and section (e.g. `02-replica-set-guida-completa.md`, "Parte 4")
+- the guide and section (e.g. `docs/ita/02-replica-set-guida-completa.md`, "Parte 4", or `docs/eng/02-replica-set-complete-guide.md`, "Part 4")
 - your environment: Debian version, Docker / Docker Compose version, MongoDB version, cloud provider if
 any
 - the exact command you ran and its output (remove passwords, hostnames and IP addresses first)

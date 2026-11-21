@@ -8,3 +8,5 @@
 *.timer    text eol=lf
 *.conf     text eol=lf
 *.md       text eol=lf
+*.js       text eol=lf
+*.csv      text eol=lf
