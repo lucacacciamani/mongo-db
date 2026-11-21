@@ -1,0 +1,181 @@
+[English](README.md) · **Italiano**
+
+# MongoDB 8.0 in Docker su Debian 13
+
+Documentazione e file di configurazione per installare **MongoDB 8.0** in un container Docker su una macchina virtuale **Debian 13 (trixie)**, con particolare riferimento ad **Azure**.
+
+## Scopo del progetto
+
+Installare MongoDB su Debian 13 non è immediato: MongoDB non pubblica ancora pacchetti server ufficiali per questa versione, e molte guide in circolazione usano comandi ormai obsoleti (`apt-key`, repository di vecchie versioni di Debian, MongoDB 5.0 fuori supporto, la vecchia shell `mongo`).
+
+Questo progetto nasce per offrire un percorso **aggiornato, completo e verificato sul campo** che porti da una VM appena creata a un'istanza MongoDB pronta all'uso, senza fermarsi alla sola installazione: sicurezza, backup, accesso e manutenzione fanno parte del percorso fin dall'inizio.
+
+Il setup è pensato per ambienti di **sviluppo e test**, con una checklist dedicata ai passi necessari prima di portarlo in produzione.
+
+## Obiettivi
+
+1. **Sicurezza di default.** Autenticazione sempre attiva, database non esposto su internet, password generate casualmente e mai scritte in chiaro nei comandi, utente applicativo con permessi limitati al proprio database.
+2. **Dati protetti.** Backup automatici con retention su più livelli (giornaliera, settimanale, mensile) e una procedura di ripristino testata, non solo descritta.
+3. **Riproducibilità.** Gli stessi comandi e file di configurazione portano sempre allo stesso risultato; i file in `config/` si possono copiare sulla VM così come sono.
+4. **Manutenzione semplice.** Avvio automatico, aggiornamenti di sicurezza automatici, log con dimensione limitata, aggiornamento di MongoDB con pochi comandi.
+5. **Accessibilità.** Una guida completa per chi parte da zero, che spiega il perché di ogni passaggio, e una guida rapida per chi vuole solo i comandi.
+6. **Scelte motivate.** Ogni decisione tecnica (Docker, porte, permessi, retention) è spiegata, così è possibile adattarla consapevolmente al proprio contesto.
+7. **Esperienza reale.** Gli errori incontrati durante un'installazione effettiva, e la loro soluzione, sono raccolti nelle sezioni di risoluzione dei problemi.
+
+## Cosa comprende
+
+Autenticazione, utente applicativo con permessi limitati, backup automatici con retention giornaliera/settimanale/mensile, accesso dall'ambiente di sviluppo (tunnel SSH o accesso diretto), gestione dei log e hardening di base del sistema (aggiornamenti automatici, SSH solo con chiave). Una seconda parte copre la cifratura delle connessioni con **TLS**, tramite una CA privata, una terza il **replica set** e una quarta lo **sharding**, costruiti in laboratorio e accompagnati dallo scenario di produzione. Una quinta parte insegna a **usare** il cluster con `mongosh`: operazioni CRUD, indici, aggregazione, transazioni, validazione, ricerca testuale, change stream, import ed export.
+
+> **Perché Docker?** L'immagine Docker ufficiale di MongoDB include tutte le dipendenze, quindi funziona su Debian 13 senza forzature, e rende semplici aggiornamenti e rimozione.
+
+## Documentazione
+
+Le guide sono numerate nell'ordine in cui vanno seguite. Ogni argomento ha due versioni: una **completa**, per chi ha poca esperienza con Linux, Docker o MongoDB (ogni passaggio spiega cosa fa il comando e cosa aspettarsi), e una **rapida**, per chi conosce già l'ambiente (sequenza dei comandi con spiegazioni essenziali).
+
+Le guide sono disponibili in italiano in [`docs/ita`](docs/ita) e in inglese in [`docs/eng`](docs/eng) (indice nel [README in inglese](README.md)). I comandi, i file di configurazione e gli output sono identici nelle due versioni.
+
+| # | Argomento | Guida completa | Guida rapida |
+|---|---|---|---|
+| 00 | Installazione, sicurezza di base, utente applicativo, backup, accesso, manutenzione | [00-guida-completa](docs/ita/00-guida-completa.md) | [00-guida-rapida](docs/ita/00-guida-rapida.md) |
+| 01 | Cifratura delle connessioni con TLS (CA privata, client, rinnovi) | [01-tls-guida-completa](docs/ita/01-tls-guida-completa.md) | [01-tls-guida-rapida](docs/ita/01-tls-guida-rapida.md) |
+| 02 | Replica set: costruzione, failover, accesso esterno, TLS a rotazione, backup con oplog, manutenzione | [02-replica-set-guida-completa](docs/ita/02-replica-set-guida-completa.md) | [02-replica-set-guida-rapida](docs/ita/02-replica-set-guida-rapida.md) |
+| 03 | Sharding: cluster completo, shard key, bilanciatore, TLS, backup notturno | [03-sharding-guida-completa](docs/ita/03-sharding-guida-completa.md) | [03-sharding-guida-rapida](docs/ita/03-sharding-guida-rapida.md) |
+| 04 | CRUD con mongosh: lettura e scrittura, indici, aggregazione, transazioni, validazione, ricerca testuale, change stream, import/export | [04-crud-guida-completa](docs/ita/04-crud-guida-completa.md) | [04-crud-guida-rapida](docs/ita/04-crud-guida-rapida.md) |
+
+Per tutte le guide vale la **[legenda dei comandi](docs/ita/legenda-comandi-linux.md)**: spiega ogni comando Linux, simbolo della shell, comando Docker, MongoDB e PowerShell usato nel progetto, con esempi presi dalle guide.
+
+La guida 01 presuppone di aver completato la 00; la 02 presuppone la 00 e la 01 (riusa la CA per il TLS); la 03 presuppone la 00 e la 01, e la 02 è consigliata; la 04 presuppone il cluster della 03.
+
+### Il percorso
+
+```mermaid
+flowchart LR
+    G00["00 · Installazione<br/>istanza singola"] --> G01["01 · TLS<br/>CA privata"]
+    G01 --> G02["02 · Replica set<br/>3 nodi"]
+    G01 --> G03["03 · Sharding<br/>10 processi"]
+    G02 -. "consigliata" .-> G03
+    G03 --> G04["04 · CRUD<br/>mongosh"]
+    LEG["Legenda dei comandi"] -.- G00
+```
+
+### Come leggere le guide
+
+- I riquadri **🧭** spiegano ogni scelta, distinguendo ciò che è stato fatto **nel laboratorio** (e collaudato) da ciò che si sceglie **in produzione**.
+- I blocchi **📋 Output reale del collaudo**, richiudibili, riportano l'output ottenuto durante le prove: servono a confrontare il proprio risultato con quello atteso.
+- I diagrammi (architetture, flussi, sequenze, grafici) sono scritti in **Mermaid** e vengono disegnati direttamente da GitHub.
+- Il simbolo **🧪** segnala le parti non ancora collaudate.
+
+## Struttura del repository
+
+```
+.
+├── README.md                         README in inglese (pagina principale)
+├── README.it.md                      README in italiano
+├── docs/
+│   ├── ita/                          Guide in italiano
+│   │   ├── 00-guida-completa.md
+│   │   ├── 00-guida-rapida.md
+│   │   ├── 01-tls-guida-completa.md
+│   │   ├── 01-tls-guida-rapida.md
+│   │   ├── 02-replica-set-guida-completa.md
+│   │   ├── 02-replica-set-guida-rapida.md
+│   │   ├── 03-sharding-guida-completa.md
+│   │   ├── 03-sharding-guida-rapida.md
+│   │   ├── 04-crud-guida-completa.md
+│   │   ├── 04-crud-guida-rapida.md
+│   │   └── legenda-comandi-linux.md  (legenda dei comandi, valida per tutte le guide)
+│   └── eng/                          Guide in inglese (stessi contenuti)
+│       ├── 00-complete-guide.md
+│       ├── 00-quick-guide.md
+│       ├── 01-tls-complete-guide.md
+│       ├── 01-tls-quick-guide.md
+│       ├── 02-replica-set-complete-guide.md
+│       ├── 02-replica-set-quick-guide.md
+│       ├── 03-sharding-complete-guide.md
+│       ├── 03-sharding-quick-guide.md
+│       ├── 04-crud-complete-guide.md
+│       ├── 04-crud-quick-guide.md
+│       └── linux-commands-legend.md
+└── config/
+    ├── 00-base/                      Risorse della guida 00 (senza TLS)
+    │   ├── docker-compose.yml        → ~/mongodb/docker-compose.yml
+    │   ├── mongo-backup.sh           → /usr/local/bin/mongo-backup.sh
+    │   ├── mongo-backup.service      → /etc/systemd/system/mongo-backup.service
+    │   ├── mongo-backup.timer        → /etc/systemd/system/mongo-backup.timer
+    │   └── mongodb-thp.conf          → /etc/tmpfiles.d/mongodb-thp.conf
+    ├── 01-tls/                       Risorse della guida 01 (con TLS)
+    │   ├── docker-compose.yml        → ~/mongodb/docker-compose.yml (sostituisce quello della 00)
+    │   ├── mongo-backup.sh           → /usr/local/bin/mongo-backup.sh (sostituisce quello della 00)
+    │   └── genera-certificati-tls.sh → ~/mongodb/tls/ (crea o rinnova i certificati)
+    ├── 02-replica-set/               Risorse della guida 02 (laboratorio replica set)
+    │   ├── docker-compose.yml        → ~/mongo-lab/02-replica-set/ (fase iniziale, senza TLS)
+    │   ├── docker-compose-tls.yml    → ~/mongo-lab/02-replica-set/docker-compose.yml (finale, con TLS)
+    │   ├── server.ext.example        → ~/mongo-lab/02-replica-set/tls/server.ext
+    │   ├── mongo-rs-backup.sh        → /usr/local/bin/mongo-rs-backup.sh (impostare LAB e FQDN)
+    │   ├── mongo-rs-backup.service   → /etc/systemd/system/
+    │   └── mongo-rs-backup.timer     → /etc/systemd/system/ (03:00 UTC)
+    ├── 03-sharding/                  Risorse della guida 03 (cluster con sharding)
+    │   ├── docker-compose.yml        → ~/mongo-lab/03-sharding/ (senza TLS)
+    │   ├── docker-compose-tls.yml    → ~/mongo-lab/03-sharding/docker-compose.yml (con TLS)
+    │   ├── server.ext.example        → ~/mongo-lab/03-sharding/tls/server.ext
+    │   ├── funzioni-lab.sh           → ~/mongo-lab/03-sharding/ (sh_eval, node_eval; versione TLS)
+    │   ├── mongo-sh-backup.sh        → /usr/local/bin/mongo-sh-backup.sh (impostare LAB)
+    │   ├── mongo-sh-backup.service   → /etc/systemd/system/
+    │   └── mongo-sh-backup.timer     → /etc/systemd/system/ (03:30 UTC)
+    └── 04-crud/                      Risorse della guida 04 (CRUD con mongosh)
+        ├── funzioni-crud.sh          → ~/mongo-lab/04-crud/ (app_shell, app_eval, app_export, app_import)
+        ├── dati-crud.js              → ~/mongo-lab/04-crud/ (dati di esempio, rilanciabile)
+        └── prodotti.csv              → ~/mongo-lab/04-crud/ (CSV per la prova di import)
+```
+
+Ogni guida ha la propria cartella di risorse, con gli stessi file riportati nel testo, pronti da copiare sulla VM nei percorsi indicati. La guida 01 contiene solo i file che cambiano rispetto alla 00: timer, servizio systemd e impostazioni del kernel restano quelli di `00-base`.
+
+Lo script di backup esiste in due versioni: quella di `00-base` si collega senza TLS; quella di `01-tls` rileva da sola se il TLS è attivo e funziona in entrambi i casi, anche dopo un eventuale rollback. Attivando il TLS va quindi installata la versione `01-tls`, altrimenti i backup smettono di funzionare.
+
+## Requisiti
+
+- VM Debian 13 con CPU che supporta le istruzioni **AVX** (richieste da MongoDB 8.0)
+- Accesso SSH con utente abilitato a `sudo`
+- Per l'accesso dall'esterno: permessi per modificare il Network Security Group (NSG) su Azure
+
+## Avvio rapido
+
+Dopo aver installato Docker e configurato le Transparent Huge Pages (vedi la guida):
+
+```bash
+mkdir -p ~/mongodb && cd ~/mongodb
+# copia qui config/00-base/docker-compose.yml
+
+openssl rand -base64 24 | tr -d '/+=' | sudo tee mongo_root_password.txt > /dev/null
+sudo chown 999:999 mongo_root_password.txt && sudo chmod 600 mongo_root_password.txt
+
+sudo docker compose up -d
+sudo docker exec -it mongo mongosh -u admin -p --authenticationDatabase admin
+```
+
+Per utente applicativo, backup, accesso remoto e hardening segui la [guida rapida](docs/ita/00-guida-rapida.md) o la [guida completa](docs/ita/00-guida-completa.md); per il TLS, le guide [01](docs/ita/01-tls-guida-completa.md).
+
+## Note di sicurezza
+
+- Le password **non** fanno parte del repository: vengono generate sulla VM e conservate in file leggibili solo da root (esclusi tramite `.gitignore`).
+- Di default MongoDB è raggiungibile solo da `127.0.0.1` della VM. Non pubblicare mai la porta su `0.0.0.0`: Docker scavalca il firewall di sistema.
+- L'accesso diretto sulla porta 27017 senza TLS è pensato **solo per lo sviluppo**, perché il traffico viaggia in chiaro: per cifrarlo segui le guide 01. Per la produzione consulta la checklist finale delle guide.
+- La chiave privata della CA (`ca.key`) e le chiavi del server non devono mai finire nel repository né restare senza protezione: le guide 01 spiegano come custodirle.
+
+## Versioni di riferimento e stato di verifica
+
+Testato con MongoDB 8.0.32, Docker Engine 29, Docker Compose 5 su Debian 13 (Azure).
+
+| Guida | Stato |
+|---|---|
+| 00 | Collaudata su un'installazione reale: installazione, utente applicativo, backup e ripristino, accesso diretto, log, aggiornamenti automatici. Non ancora collaudati (🧪): tunnel SSH, log con journald, chiave SSH e disattivazione delle password, retention settimanale/mensile su un periodo reale |
+| 01 (TLS) | Parti 2–9 collaudate su un'installazione reale, compresa l'esecuzione notturna del backup con TLS. Rinnovo del certificato, rollback e script `genera-certificati-tls.sh` non ancora collaudati su VM (🧪) |
+| 02 (replica set) | Collaudata su un'installazione reale (laboratorio con tre container su una VM). Non ancora collaudati (🧪): rollback del TLS, cambio password, smantellamento, retention settimanale/mensile su un periodo reale; opzioni avanzate (x.509, secondario nascosto, horizons) solo descritte |
+| 03 (sharding) | Collaudata su un'installazione reale (10 container su una VM), compresi TLS a freddo, backup notturno e ripristino. Non collaudati (🧪): ripristino degli utenti dal backup, retention settimanale/mensile nel tempo; argomenti avanzati (zone, resharding, x.509) solo descritti |
+| 04 (CRUD) | Collaudata su un'installazione reale, sul cluster della guida 03 con l'utente applicativo. Non ancora collaudati (🧪): ripresa del change stream con `resumeAfter`, conteggio dei documenti non validi dopo il passaggio a `warn`; argomenti avanzati (read concern, collation, indici geospaziali, time series) solo elencati |
+
+Le parti non ancora collaudate sono segnalate nelle guide con il simbolo 🧪. Se le esegui, segnala eventuali differenze.
+
+## Licenza
+
+Distribuito con licenza [MIT](LICENSE). © 2026 Luca Cacciamani.
